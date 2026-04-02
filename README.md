@@ -9,14 +9,13 @@ The repository combines a pure native core, a small protocol layer, and a GDExte
 ## Repository layout
 
 ```text
-godot/                      Godot 4.6 project, scenes, scripts, and GUT tests
-native/backend_core/        Pure C++ simulation code
-native/protocol/            Shared message/schema layer for native code
-native/godot_bridge/        GDExtension bridge loaded by Godot
-native/third_party/godot-cpp/
-                            Vendored godot-cpp bindings
-tests/                      GoogleTest suites and headless Godot test wiring
-CMakeLists.txt              Standalone native build entry point
+godot/                          Godot 4.6 project, scenes, scripts, and GUT tests
+native/backend_core/            Pure C++ simulation code
+native/protocol/                Shared message/schema layer for native code
+native/godot_bridge/            GDExtension bridge loaded by Godot
+native/third_party/godot-cpp/   Vendored godot-cpp bindings
+tests/                          GoogleTest suites and headless Godot test wiring
+CMakeLists.txt                  Standalone native build entry point
 ```
 
 ## Running tests
