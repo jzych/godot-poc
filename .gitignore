@@ -1,0 +1,35 @@
+# Build
+build/
+out/
+cmake-build-*/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Godot
+godot/.godot/
+
+# LLM specific
+.claude/
+.tasks/
+
+# Godot temp/backup DLL files
+~*
+
+# Compiled
+*.obj
+*.o
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+*.pdb
+
+# OS
+Thumbs.db
+.DS_Store

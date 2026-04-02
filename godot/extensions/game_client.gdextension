@@ -1,0 +1,13 @@
+[configuration]
+
+entry_symbol = "game_client_init"
+compatibility_minimum = "4.6"
+
+[libraries]
+
+windows.debug.x86_64 = "res://extensions/libgame_client.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://extensions/libgame_client.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://extensions/libgame_client.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://extensions/libgame_client.linux.template_release.x86_64.so"
+macos.debug = "res://extensions/libgame_client.macos.template_debug.framework"
+macos.release = "res://extensions/libgame_client.macos.template_release.framework"
