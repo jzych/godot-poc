@@ -3,10 +3,11 @@ name: CodeQL
 on:
   push:
     branches:
-      - main
+      - "**"
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   analyze:
@@ -19,6 +20,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
