@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: ${{ runner.os }}-apt-
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-cmake-deps-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-cmake-deps-
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake gcovr godot4 ninja-build python3
+
+      - name: Configure with coverage
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_FLAGS=--coverage \
+            -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wshadow --coverage"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Generate SonarCloud coverage report
+        run: |
+          gcovr \
+            -r . build \
+            --sonarqube sonar-coverage.xml \
+            --exclude-unreachable-branches \
+            --exclude-throw-branches \
+            --filter 'native/' \
+            --exclude 'native/third_party/' \
+            --exclude 'tests/'
+          test -s sonar-coverage.xml
+
+      - name: Upload analysis artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-artifacts
+          path: |
+            sonar-coverage.xml
+            build/compile_commands.json
+          retention-days: 1
+
+  sonar-analyze:
+    needs: build-and-test
+    if: ${{ secrets.SONAR_TOKEN != '' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: analysis-artifacts
+
+      - name: Run SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v6.0.0
+        with:
+          args: >
+            -Dsonar.organization=jzych
+            -Dsonar.projectKey=jzych_godot-poc
+            -Dsonar.sources=native
+            -Dsonar.tests=tests
+            -Dsonar.test.inclusions=tests/**
+            -Dsonar.exclusions=build/**,godot/**,native/third_party/**
+            -Dsonar.coverage.exclusions=tests/**,native/third_party/**
+            -Dsonar.cfamily.compile-commands=build/compile_commands.json
+            -Dsonar.coverageReportPaths=sonar-coverage.xml
+            -Dsonar.javascript.file.suffixes=-
+            -Dsonar.typescript.file.suffixes=-
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
