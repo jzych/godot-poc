@@ -123,6 +123,87 @@ func test_zoom_respects_distance_bounds():
 		rig.apply_zoom_step(1.0)
 	assert_eq(rig.target_distance, rig.max_distance, "Zoom out should clamp to max distance")
 
+func test_keyboard_pan_moves_focus_on_fixed_plane():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	var start: Vector3 = rig.focus_position
+	var initial_yaw: float = rig.yaw_degrees_value
+	var initial_pitch: float = rig.pitch_degrees_value
+
+	rig.apply_keyboard_pan(Vector2(0.0, 1.0), 1.0)
+
+	assert_eq(rig.focus_position.y, start.y, "Keyboard pan should preserve height")
+	assert_eq(rig.pan_plane_height, start.y, "Keyboard pan should keep the same plane height")
+	assert_eq(rig.focus_position.x, start.x, "Forward pan at zero yaw should not change X")
+	assert_lt(rig.focus_position.z, start.z, "Forward pan should move along the fixed XZ plane")
+	assert_eq(rig.yaw_degrees_value, initial_yaw, "Keyboard pan should not change yaw")
+	assert_eq(rig.pitch_degrees_value, initial_pitch, "Keyboard pan should not change pitch")
+
+func test_drag_pan_requires_pan_hold_and_preserves_orientation():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 7.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	var start: Vector3 = rig.focus_position
+	var initial_yaw: float = rig.yaw_degrees_value
+	var initial_pitch: float = rig.pitch_degrees_value
+
+	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0)))
+	assert_eq(rig.focus_position, start, "Mouse motion should not pan without LMB held")
+
+	rig._unhandled_input(_mouse_button_event(1, true))
+	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0)))
+	rig._unhandled_input(_mouse_button_event(1, false))
+
+	assert_eq(rig.focus_position.y, start.y, "Drag pan should preserve height")
+	assert_eq(rig.pan_plane_height, start.y, "Drag pan should keep the configured plane height")
+	assert_lt(rig.focus_position.x, start.x, "Dragging right should move focus left for grab-style pan")
+	assert_gt(rig.focus_position.z, start.z, "Dragging up should move focus backward on the fixed plane")
+	assert_eq(rig.yaw_degrees_value, initial_yaw, "Drag pan should not change yaw")
+	assert_eq(rig.pitch_degrees_value, initial_pitch, "Drag pan should not change pitch")
+
+func test_drag_pan_does_not_interfere_with_rotation():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 7.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	var start_focus: Vector3 = rig.focus_position
+	var start_yaw: float = rig.yaw_degrees_value
+	var start_pitch: float = rig.pitch_degrees_value
+
+	rig._unhandled_input(_mouse_button_event(1, true))
+	rig._unhandled_input(_mouse_button_event(2, true))
+	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0)))
+	rig._unhandled_input(_mouse_button_event(2, false))
+	rig._unhandled_input(_mouse_button_event(1, false))
+
+	assert_eq(rig.focus_position, start_focus, "Drag pan should not move focus while rotation is active")
+	assert_gt(rig.yaw_degrees_value, start_yaw, "Rotation input should still update yaw")
+	assert_lt(rig.pitch_degrees_value, start_pitch, "Rotation should still update pitch while pan is held")
+
+func test_pan_speed_scales_with_distance():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	var start: Vector3 = rig.focus_position
+
+	rig.current_distance = 2.0
+	rig.target_distance = 2.0
+	rig.apply_keyboard_pan(Vector2(1.0, 0.0), 1.0)
+	var near_distance_delta: float = rig.focus_position.distance_to(start)
+
+	rig.focus_position = start
+	rig.current_distance = 20.0
+	rig.target_distance = 20.0
+	rig.apply_keyboard_pan(Vector2(1.0, 0.0), 1.0)
+	var far_distance_delta: float = rig.focus_position.distance_to(start)
+
+	assert_gt(far_distance_delta, near_distance_delta, "Pan speed should increase at farther zoom distances")
+	assert_eq(rig.focus_position.y, start.y, "Pan speed scaling should still preserve height")
+
 func test_main_scene_wires_camera_rig():
 	var scene := _spawn_main_scene()
 	await _wait_frames(1)
@@ -131,6 +212,7 @@ func test_main_scene_wires_camera_rig():
 	var configured_focus: Vector3 = rig.focus_position
 	var earth_pos_at_setup: Vector3 = scene.bridge.get_body_state(1)["position"]
 	var starting_distance: float = rig.current_distance
+	var starting_height: float = rig.focus_position.y
 
 	assert_not_null(rig, "Main scene should instance the camera rig")
 	assert_not_null(scene.bridge, "Main scene should create the native bridge")
@@ -147,3 +229,32 @@ func test_main_scene_wires_camera_rig():
 
 	assert_eq(rig.focus_position, configured_focus, "Zooming in the main scene should not move focus")
 	assert_gt(rig.current_distance, starting_distance, "Main scene zoom input should update camera distance")
+
+	var pan_right: Vector3 = rig._get_pan_right()
+	var pan_forward: Vector3 = rig._get_pan_forward()
+	rig.apply_keyboard_pan(Vector2(1.0, 0.0), 0.5)
+	var keyboard_pan_delta: Vector3 = rig.focus_position - configured_focus
+	assert_eq(rig.focus_position.y, starting_height, "Main scene keyboard pan should preserve height")
+	assert_gt(
+		keyboard_pan_delta.dot(pan_right),
+		0.0,
+		"Main scene keyboard pan should move along the camera-relative XZ direction"
+	)
+
+	var focus_after_keyboard_pan: Vector3 = rig.focus_position
+	rig._unhandled_input(_mouse_button_event(1, true))
+	rig._unhandled_input(_mouse_motion_event(Vector2(50.0, -40.0)))
+	rig._unhandled_input(_mouse_button_event(1, false))
+
+	var drag_pan_delta: Vector3 = rig.focus_position - focus_after_keyboard_pan
+	assert_eq(rig.focus_position.y, starting_height, "Main scene drag pan should preserve height")
+	assert_lt(
+		drag_pan_delta.dot(pan_right),
+		0.0,
+		"Main scene drag pan should update focus along the camera-relative XZ direction"
+	)
+	assert_lt(
+		drag_pan_delta.dot(pan_forward),
+		0.0,
+		"Main scene drag pan vertical motion should move opposite the camera-forward direction"
+	)
