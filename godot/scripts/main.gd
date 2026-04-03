@@ -13,6 +13,8 @@ const BODY_RADII := {
 
 var bridge: SolarSystemBridge
 var body_nodes: Array[MeshInstance3D] = []
+var camera: Camera3D
+var camera_offset: Vector3
 
 func _ready():
 	bridge = SolarSystemBridge.new()
@@ -49,6 +51,9 @@ func _process(_delta):
 	for i in range(body_nodes.size()):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
+	var earth_pos: Vector3 = bridge.get_body_state(1)["position"]
+	camera.position = earth_pos + camera_offset
+	camera.look_at(earth_pos)
 
 func _setup_light():
 	var light = DirectionalLight3D.new()
@@ -58,12 +63,12 @@ func _setup_light():
 	add_child(light)
 
 func _setup_camera():
-	var earth_state = bridge.get_body_state(1)
-	var earth_pos: Vector3 = earth_state["position"]
-
-	var camera = Camera3D.new()
-	camera.far = 25000.0
+	var earth_pos: Vector3 = bridge.get_body_state(1)["position"]
 	var outward = earth_pos.normalized()
-	camera.position = earth_pos + outward * 3.0 + Vector3(0, 2.0, 0)
+	camera_offset = outward * 3.0 + Vector3(0, 2.0, 0)
+
+	camera = Camera3D.new()
+	camera.far = 25000.0
+	camera.position = earth_pos + camera_offset
 	add_child(camera)
 	camera.look_at(earth_pos)

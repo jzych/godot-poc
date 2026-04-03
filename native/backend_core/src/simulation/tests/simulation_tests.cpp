@@ -115,8 +115,8 @@ TEST(SimulationTest, FullOrbitReturnsToStart) {
     sim.start();
 
     // Step exactly one Earth orbital period in game seconds
-    // 31557600 real seconds / 21600 time_scale = 1461.0 game seconds
-    double game_seconds_per_orbit = 31557600.0 / 21600.0;
+    double game_seconds_per_orbit =
+        31557600.0 / solar::Simulation::TIME_SCALE;
     sim.step(game_seconds_per_orbit);
 
     const auto& earth = sim.bodies()[1];

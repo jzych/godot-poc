@@ -22,7 +22,7 @@ public:
     size_t body_count() const;
     double sim_time() const;
 
-    static constexpr double TIME_SCALE = 21600.0; // 1 game second = 6 real hours
+    static constexpr double TIME_SCALE = 2160.0; // 1 game second = 36 real minutes
 
 private:
     bool running_ = false;
