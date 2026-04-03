@@ -33,4 +33,11 @@ The CMake test suite runs both:
 ## Godot development
 
 Open `godot/project.godot` in Godot 4.6.
+On Windows, you can install Godot with Scoop:
+
+```powershell
+scoop bucket add extras
+scoop install extras/godot
+```
+
 The native build writes the GDExtension library into `godot/extensions/`, so rebuild with CMake after changing C++ bridge or backend code.

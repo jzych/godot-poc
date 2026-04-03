@@ -54,7 +54,26 @@ set(GODOT_TEST_ENV
 )
 
 # Godot headless smoke test (GUT)
-find_program(GODOT_EXECUTABLE NAMES godot4 godot)
+# Prefer console/headless-friendly binaries on Windows because editor builds
+# such as Scoop's `godot.exe` can crash when invoked with `--headless`.
+set(GODOT_EXECUTABLE "")
+
+if(WIN32)
+    file(GLOB GODOT_WINGET_CONSOLE_EXECUTABLES
+        "$ENV{LOCALAPPDATA}/Microsoft/WinGet/Packages/GodotEngine.GodotEngine_Microsoft.Winget.Source_8wekyb3d8bbwe/Godot*_console.exe"
+    )
+
+    if(GODOT_WINGET_CONSOLE_EXECUTABLES)
+        list(SORT GODOT_WINGET_CONSOLE_EXECUTABLES COMPARE NATURAL ORDER DESCENDING)
+        list(GET GODOT_WINGET_CONSOLE_EXECUTABLES 0 GODOT_EXECUTABLE)
+    endif()
+endif()
+
+if(NOT GODOT_EXECUTABLE)
+    find_program(GODOT_EXECUTABLE
+        NAMES godot4_console godot_console godot4 godot
+    )
+endif()
 
 if(GODOT_EXECUTABLE)
     add_test(
