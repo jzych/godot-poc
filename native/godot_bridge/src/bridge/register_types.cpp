@@ -1,4 +1,4 @@
-#include "godot_bridge/register_types.h"
+#include "bridge/register_types.h"
 
 #include <gdextension_interface.h>
 
@@ -6,7 +6,7 @@
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
 
-#include "godot_bridge/solar_system_bridge.h"
+#include "bridge/solar_system_bridge.h"
 
 using namespace godot;
 

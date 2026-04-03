@@ -11,9 +11,10 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(googletest)
 
-# C++ smoke test
+# backend_core unit tests
 add_executable(backend_core_tests
-    test_simulation.cpp
+    ${CMAKE_SOURCE_DIR}/native/backend_core/src/simulation/tests/simulation_tests.cpp
+    ${CMAKE_SOURCE_DIR}/native/backend_core/src/massive_body/tests/massive_body_tests.cpp
 )
 
 target_link_libraries(backend_core_tests
@@ -57,5 +58,5 @@ if(GODOT_EXECUTABLE)
         ENVIRONMENT "GODOT_DISABLE_LEAK_CHECKS=1"
     )
 else()
-    message(STATUS "Godot executable (godot4/godot) not found in PATH — skipping headless GUT tests")
+    message(STATUS "Godot executable (godot4/godot) not found in PATH -- skipping headless GUT tests")
 endif()
