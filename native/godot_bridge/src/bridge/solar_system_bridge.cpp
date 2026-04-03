@@ -22,12 +22,11 @@ void SolarSystemBridge::_bind_methods() {
 }
 
 void SolarSystemBridge::_ready() {
-    sim_.add_body({MassiveBodyType::Sun, "Sun", 0.0, 0.0, -1,
-                   {1.0f, 0.65f, 0.0f}, {}});
-    sim_.add_body({MassiveBodyType::Earth, "Earth", 149597870.7, 31557600.0, 0,
-                   {0.2f, 0.4f, 1.0f}, {}});
-    sim_.add_body({MassiveBodyType::Moon, "Moon", 384400.0, 2360448.0, 1,
-                   {0.8f, 0.8f, 0.8f}, {}});
+    using enum MassiveBodyType;
+
+    sim_.add_body({Sun, "Sun", 0.0, 0.0, -1, {1.0f, 0.65f, 0.0f}, {}});
+    sim_.add_body({Earth, "Earth", 149597870.7, 31557600.0, 0, {0.2f, 0.4f, 1.0f}, {}});
+    sim_.add_body({Moon, "Moon", 384400.0, 2360448.0, 1, {0.8f, 0.8f, 0.8f}, {}});
     sim_.start();
     sim_.step(0.0);
 }

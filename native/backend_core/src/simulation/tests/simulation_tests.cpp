@@ -77,13 +77,12 @@ TEST(SimulationTest, EarthMaintainsOrbitalRadius) {
 }
 
 TEST(SimulationTest, MoonOrbitsEarth) {
+    using enum solar::MassiveBodyType;
+
     solar::Simulation sim;
-    sim.add_body({solar::MassiveBodyType::Sun, "Sun", 0.0, 0.0, -1,
-                  {1, 0.65f, 0}, {}});
-    sim.add_body({solar::MassiveBodyType::Earth, "Earth", 149597870.7,
-                  31557600.0, 0, {0, 0, 1}, {}});
-    sim.add_body({solar::MassiveBodyType::Moon, "Moon", 384400.0, 2360448.0, 1,
-                  {0.8f, 0.8f, 0.8f}, {}});
+    sim.add_body({Sun, "Sun", 0.0, 0.0, -1, {1, 0.65f, 0}, {}});
+    sim.add_body({Earth, "Earth", 149597870.7, 31557600.0, 0, {0, 0, 1}, {}});
+    sim.add_body({Moon, "Moon", 384400.0, 2360448.0, 1, {0.8f, 0.8f, 0.8f}, {}});
     sim.start();
     sim.step(1.0);
 

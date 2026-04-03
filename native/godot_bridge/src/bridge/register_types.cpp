@@ -15,7 +15,7 @@ void initialize_game_client(ModuleInitializationLevel p_level) {
         return;
     }
 
-    GDREGISTER_CLASS(solar::SolarSystemBridge);
+    ::godot::ClassDB::register_class<solar::SolarSystemBridge>();
 }
 
 void uninitialize_game_client(ModuleInitializationLevel p_level) {

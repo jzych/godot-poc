@@ -24,7 +24,7 @@ target_link_libraries(backend_core_tests
 include(GoogleTest)
 gtest_discover_tests(backend_core_tests)
 
-# Godot headless smoke test (GUT)
+# Godot headless smoke test
 find_program(GODOT_EXECUTABLE NAMES godot4 godot)
 
 if(GODOT_EXECUTABLE)
@@ -39,17 +39,15 @@ if(GODOT_EXECUTABLE)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
     )
 
-    # Run GUT after import
+    # Run bridge smoke tests after import.
     add_test(
         NAME godot_gut_tests
         COMMAND ${GODOT_EXECUTABLE}
             --headless
             --display-driver headless
             --audio-driver Dummy
-            -s res://addons/gut/gut_cmdln.gd
-            -gdir=res://tests
-            -ginclude_subdirs
-            -gexit
+            -e
+            -s res://tests/bridge_test_runner.gd
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
     )
 

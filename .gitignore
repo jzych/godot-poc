@@ -16,6 +16,7 @@ godot/.godot/
 # LLM specific
 .claude/
 .tasks/
+sonar-findings.md
 
 # Godot temp/backup DLL files
 ~*
