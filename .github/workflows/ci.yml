@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
     branches:
       - main
@@ -38,7 +38,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake gcovr godot4 ninja-build python3
+          sudo apt-get install -y build-essential cmake curl gcovr ninja-build python3 unzip
+          mkdir -p "$RUNNER_TEMP/godot" "$HOME/.local/bin"
+          curl -fsSL -o "$RUNNER_TEMP/godot/godot.zip" "https://downloads.godotengine.org/?version=4.6.2&flavor=stable&slug=linux.x86_64.zip&platform=linux.64"
+          unzip -q "$RUNNER_TEMP/godot/godot.zip" -d "$RUNNER_TEMP/godot"
+          install -m 755 "$RUNNER_TEMP/godot/Godot_v4.6.2-stable_linux.x86_64" "$HOME/.local/bin/godot4"
+          ln -sf "$HOME/.local/bin/godot4" "$HOME/.local/bin/godot"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Configure with coverage
         run: |
@@ -78,8 +84,9 @@ jobs:
 
   sonar-analyze:
     needs: build-and-test
-    if: ${{ secrets.SONAR_TOKEN != '' }}
     runs-on: ubuntu-24.04
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     permissions:
       contents: read
     steps:
@@ -95,6 +102,7 @@ jobs:
           name: analysis-artifacts
 
       - name: Run SonarCloud scan
+        if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@v6.0.0
         with:
           args: >
@@ -110,4 +118,4 @@ jobs:
             -Dsonar.javascript.file.suffixes=-
             -Dsonar.typescript.file.suffixes=-
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
