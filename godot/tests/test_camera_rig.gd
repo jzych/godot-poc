@@ -76,6 +76,53 @@ func test_camera_scene_exposes_active_camera():
 
 	assert_true(camera.current, "Camera rig should expose the active camera")
 
+func test_zoom_input_changes_target_distance_without_moving_focus():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	var initial_target: float = rig.target_distance
+	var initial_focus: Vector3 = rig.focus_position
+	var initial_yaw: float = rig.yaw_degrees_value
+	var initial_pitch: float = rig.pitch_degrees_value
+
+	rig._unhandled_input(_mouse_button_event(4, true))
+
+	assert_lt(rig.target_distance, initial_target, "Zoom in should reduce the target distance")
+	assert_eq(rig.focus_position, initial_focus, "Zoom input should not move the focus point")
+	assert_eq(rig.yaw_degrees_value, initial_yaw, "Zoom input should not change yaw")
+	assert_eq(rig.pitch_degrees_value, initial_pitch, "Zoom input should not change pitch")
+
+func test_zoom_interpolates_toward_target_distance():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	var starting_distance: float = rig.current_distance
+
+	rig._unhandled_input(_mouse_button_event(5, true))
+	var zoom_target: float = rig.target_distance
+	rig._process(0.1)
+
+	assert_gt(rig.current_distance, starting_distance, "Zoom out should move the current distance outward")
+	assert_lte(rig.current_distance, zoom_target, "Smoothing should move toward the target without overshooting")
+
+func test_zoom_respects_distance_bounds():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.min_distance = 0.5
+	rig.max_distance = 6.0
+	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
+
+	for _i in range(20):
+		rig.apply_zoom_step(-1.0)
+	assert_eq(rig.target_distance, rig.min_distance, "Zoom in should clamp to min distance")
+
+	for _j in range(30):
+		rig.apply_zoom_step(1.0)
+	assert_eq(rig.target_distance, rig.max_distance, "Zoom out should clamp to max distance")
+
 func test_main_scene_wires_camera_rig():
 	var scene := _spawn_main_scene()
 	await _wait_frames(1)
@@ -83,6 +130,7 @@ func test_main_scene_wires_camera_rig():
 	var rig: CosmosCameraRig = scene.get_node_or_null("CosmosCameraRig")
 	var configured_focus: Vector3 = rig.focus_position
 	var earth_pos_at_setup: Vector3 = scene.bridge.get_body_state(1)["position"]
+	var starting_distance: float = rig.current_distance
 
 	assert_not_null(rig, "Main scene should instance the camera rig")
 	assert_not_null(scene.bridge, "Main scene should create the native bridge")
@@ -93,3 +141,9 @@ func test_main_scene_wires_camera_rig():
 	assert_eq(scene.body_nodes.size(), scene.bridge.get_body_count(), "Scene should spawn views for all bridge bodies")
 	assert_eq(rig.focus_position, configured_focus, "Camera focus should remain stable after startup")
 	assert_gt(rig.current_distance, 0.0, "Camera rig should have a valid startup distance")
+
+	rig._unhandled_input(_mouse_button_event(5, true))
+	rig._process(0.2)
+
+	assert_eq(rig.focus_position, configured_focus, "Zooming in the main scene should not move focus")
+	assert_gt(rig.current_distance, starting_distance, "Main scene zoom input should update camera distance")

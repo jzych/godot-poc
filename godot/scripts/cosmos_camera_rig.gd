@@ -4,12 +4,17 @@ class_name CosmosCameraRig
 @export var rotation_sensitivity := 0.2
 @export var pitch_min_deg := -80.0
 @export var pitch_max_deg := 80.0
+@export var min_distance := 0.5
+@export var max_distance := 20000.0
+@export var zoom_step_ratio := 0.15
+@export var zoom_smoothing_speed := 8.0
 
 var focus_position: Vector3 = Vector3.ZERO
 var pan_plane_height: float = 0.0
 var yaw_degrees_value: float = 0.0
 var pitch_degrees_value: float = -35.0
 var current_distance: float = 3.6055513
+var target_distance: float = 3.6055513
 
 var _rotate_active: bool = false
 
@@ -19,13 +24,31 @@ var _rotate_active: bool = false
 
 func _ready():
 	_ensure_input_actions()
+	current_distance = clamp(current_distance, min_distance, max_distance)
+	target_distance = clamp(target_distance, min_distance, max_distance)
+	_apply_state()
+
+func _process(delta):
+	if is_equal_approx(current_distance, target_distance):
+		return
+
+	var weight: float = clamp(delta * zoom_smoothing_speed, 0.0, 1.0)
+	current_distance = lerpf(current_distance, target_distance, weight)
+	if is_equal_approx(current_distance, target_distance):
+		current_distance = target_distance
 	_apply_state()
 
 func _unhandled_input(event):
 	var handled: bool = false
 
 	if event is InputEventMouseButton:
-		if event.is_action_pressed(&"camera_rotate_hold"):
+		if event.is_action_pressed(&"camera_zoom_in"):
+			apply_zoom_step(-1.0)
+			handled = true
+		elif event.is_action_pressed(&"camera_zoom_out"):
+			apply_zoom_step(1.0)
+			handled = true
+		elif event.is_action_pressed(&"camera_rotate_hold"):
 			_rotate_active = true
 			handled = true
 		elif event.is_action_released(&"camera_rotate_hold"):
@@ -45,7 +68,8 @@ func configure_from_offset(new_focus_position: Vector3, offset: Vector3):
 
 	focus_position = new_focus_position
 	pan_plane_height = new_focus_position.y
-	current_distance = max(safe_offset.length(), 0.01)
+	current_distance = clamp(safe_offset.length(), min_distance, max_distance)
+	target_distance = current_distance
 
 	var horizontal_length: float = Vector2(safe_offset.x, safe_offset.z).length()
 	yaw_degrees_value = rad_to_deg(atan2(safe_offset.x, safe_offset.z))
@@ -69,6 +93,13 @@ func apply_rotate_motion(relative: Vector2):
 	)
 	_apply_state()
 
+func apply_zoom_step(direction: float):
+	if is_zero_approx(direction):
+		return
+
+	var zoom_factor: float = pow(1.0 + zoom_step_ratio, direction)
+	target_distance = clamp(target_distance * zoom_factor, min_distance, max_distance)
+
 func _apply_state():
 	if not is_node_ready():
 		return
@@ -80,6 +111,8 @@ func _apply_state():
 
 func _ensure_input_actions():
 	_ensure_action(&"camera_rotate_hold", [_make_mouse_button_event(2)])
+	_ensure_action(&"camera_zoom_in", [_make_mouse_button_event(4)])
+	_ensure_action(&"camera_zoom_out", [_make_mouse_button_event(5)])
 
 func _ensure_action(action_name: StringName, events: Array):
 	if InputMap.has_action(action_name):
