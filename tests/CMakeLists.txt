@@ -24,7 +24,36 @@ target_link_libraries(backend_core_tests
 include(GoogleTest)
 gtest_discover_tests(backend_core_tests)
 
-# Godot headless smoke test
+# Godot writes editor and user data outside the repo by default. Redirect it
+# into the build tree so headless runs work under sandboxed and portable installs.
+set(GODOT_TEST_HOME "${CMAKE_BINARY_DIR}/godot_user")
+set(GODOT_TEST_ROAMING "${GODOT_TEST_HOME}/Roaming")
+set(GODOT_TEST_LOCAL "${GODOT_TEST_HOME}/Local")
+set(GODOT_TEST_XDG_DATA "${GODOT_TEST_HOME}/xdg_data")
+set(GODOT_TEST_XDG_CONFIG "${GODOT_TEST_HOME}/xdg_config")
+set(GODOT_TEST_XDG_CACHE "${GODOT_TEST_HOME}/xdg_cache")
+
+file(MAKE_DIRECTORY
+    "${GODOT_TEST_HOME}"
+    "${GODOT_TEST_ROAMING}"
+    "${GODOT_TEST_LOCAL}"
+    "${GODOT_TEST_XDG_DATA}"
+    "${GODOT_TEST_XDG_CONFIG}"
+    "${GODOT_TEST_XDG_CACHE}"
+)
+
+set(GODOT_TEST_ENV
+    "GODOT_DISABLE_LEAK_CHECKS=1"
+    "APPDATA=${GODOT_TEST_ROAMING}"
+    "LOCALAPPDATA=${GODOT_TEST_LOCAL}"
+    "USERPROFILE=${GODOT_TEST_HOME}"
+    "HOME=${GODOT_TEST_HOME}"
+    "XDG_DATA_HOME=${GODOT_TEST_XDG_DATA}"
+    "XDG_CONFIG_HOME=${GODOT_TEST_XDG_CONFIG}"
+    "XDG_CACHE_HOME=${GODOT_TEST_XDG_CACHE}"
+)
+
+# Godot headless smoke test (GUT)
 find_program(GODOT_EXECUTABLE NAMES godot4 godot)
 
 if(GODOT_EXECUTABLE)
@@ -39,21 +68,26 @@ if(GODOT_EXECUTABLE)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
     )
 
-    # Run bridge smoke tests after import.
+    # Run GUT after import
     add_test(
         NAME godot_gut_tests
         COMMAND ${GODOT_EXECUTABLE}
             --headless
             --display-driver headless
             --audio-driver Dummy
-            -e
-            -s res://tests/bridge_test_runner.gd
+            -s res://addons/gut/gut_cmdln.gd
+            -gdir=res://tests
+            -ginclude_subdirs
+            -gexit
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
     )
 
+    set_tests_properties(godot_bridge_smoke PROPERTIES
+        ENVIRONMENT "${GODOT_TEST_ENV}"
+    )
     set_tests_properties(godot_gut_tests PROPERTIES
         DEPENDS godot_bridge_smoke
-        ENVIRONMENT "GODOT_DISABLE_LEAK_CHECKS=1"
+        ENVIRONMENT "${GODOT_TEST_ENV}"
     )
 else()
     message(STATUS "Godot executable (godot4/godot) not found in PATH -- skipping headless GUT tests")
