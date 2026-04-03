@@ -29,6 +29,7 @@ void SolarSystemBridge::_ready() {
     sim_.add_body({MassiveBodyType::Moon, "Moon", 384400.0, 2360448.0, 1,
                    {0.8f, 0.8f, 0.8f}, {}});
     sim_.start();
+    sim_.step(0.0);
 }
 
 void SolarSystemBridge::_process(double delta) {
