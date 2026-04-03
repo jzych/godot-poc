@@ -1,5 +1,16 @@
 extends Node3D
 
+const KM_PER_AU := 149597870.7
+const AU_TO_UNITS := 10000.0
+const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
+
+# Real radii in km
+const BODY_RADII := {
+	"Sun": 696000.0,
+	"Earth": 6371.0,
+	"Moon": 1737.0,
+}
+
 var bridge: SolarSystemBridge
 var body_nodes: Array[MeshInstance3D] = []
 
@@ -8,6 +19,7 @@ func _ready():
 	add_child(bridge)
 	await get_tree().process_frame
 	_spawn_bodies()
+	_setup_light()
 	_setup_camera()
 
 func _spawn_bodies():
@@ -16,16 +28,9 @@ func _spawn_bodies():
 		var mesh_instance = MeshInstance3D.new()
 		var sphere = SphereMesh.new()
 
-		match state["name"]:
-			"Sun":
-				sphere.radius = 1.5
-				sphere.height = 3.0
-			"Earth":
-				sphere.radius = 0.5
-				sphere.height = 1.0
-			"Moon":
-				sphere.radius = 0.2
-				sphere.height = 0.4
+		var radius_units: float = BODY_RADII.get(state["name"], 1000.0) * KM_TO_UNITS
+		sphere.radius = radius_units
+		sphere.height = radius_units * 2.0
 
 		mesh_instance.mesh = sphere
 
@@ -45,8 +50,20 @@ func _process(_delta):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
 
+func _setup_light():
+	var light = DirectionalLight3D.new()
+	light.light_energy = 3.0
+	light.light_color = Color(1.0, 0.95, 0.8)
+	light.rotation_degrees = Vector3(-30, -30, 0)
+	add_child(light)
+
 func _setup_camera():
+	var earth_state = bridge.get_body_state(1)
+	var earth_pos: Vector3 = earth_state["position"]
+
 	var camera = Camera3D.new()
-	camera.position = Vector3(0, 30, 30)
-	camera.look_at(Vector3.ZERO)
+	camera.far = 25000.0
+	var outward = earth_pos.normalized()
+	camera.position = earth_pos + outward * 3.0 + Vector3(0, 2.0, 0)
 	add_child(camera)
+	camera.look_at(earth_pos)

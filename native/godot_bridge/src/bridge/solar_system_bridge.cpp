@@ -53,34 +53,13 @@ godot::Dictionary SolarSystemBridge::get_body_state(int index) const {
 
     const auto& body = sim_.bodies()[static_cast<size_t>(index)];
 
-    // Convert km to display units
-    double display_x = body.position_km.x / KM_PER_AU * GODOT_UNITS_PER_AU;
-    double display_z = body.position_km.z / KM_PER_AU * GODOT_UNITS_PER_AU;
-
-    // Amplify Moon's offset from its parent for visibility
-    if (body.parent_index >= 0) {
-        const auto& parent = sim_.bodies()[static_cast<size_t>(body.parent_index)];
-
-        // Check if this is a satellite (parent has its own parent, i.e. Moon around Earth)
-        // or just apply amplification for any body with a non-root parent
-        double parent_display_x = parent.position_km.x / KM_PER_AU * GODOT_UNITS_PER_AU;
-        double parent_display_z = parent.position_km.z / KM_PER_AU * GODOT_UNITS_PER_AU;
-
-        double offset_x = display_x - parent_display_x;
-        double offset_z = display_z - parent_display_z;
-
-        if (parent.parent_index >= 0) {
-            // This is a moon-like body: amplify its offset from parent
-            display_x = parent_display_x + offset_x * MOON_ORBIT_DISPLAY_SCALE;
-            display_z = parent_display_z + offset_z * MOON_ORBIT_DISPLAY_SCALE;
-        }
-    }
+    const double scale = GODOT_UNITS_PER_AU / KM_PER_AU;
 
     state["name"] = godot::String(body.name.c_str());
     state["position"] = godot::Vector3(
-        static_cast<float>(display_x),
+        static_cast<float>(body.position_km.x * scale),
         0.0f,
-        static_cast<float>(display_z));
+        static_cast<float>(body.position_km.z * scale));
     state["color"] = godot::Color(body.color.r, body.color.g, body.color.b);
 
     return state;
