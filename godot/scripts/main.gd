@@ -48,6 +48,9 @@ func _spawn_bodies():
 		body_nodes.append(mesh_instance)
 
 func _process(_delta):
+	if bridge == null or camera == null or body_nodes.is_empty():
+		return
+
 	for i in range(body_nodes.size()):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]

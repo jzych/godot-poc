@@ -70,7 +70,8 @@ jobs:
             --exclude-throw-branches \
             --filter 'native/' \
             --exclude 'native/third_party/' \
-            --exclude 'tests/'
+            --exclude 'tests/' \
+            --exclude '.*_tests\.cpp$'
           test -s sonar-coverage.xml
 
       - name: Upload analysis artifacts
@@ -112,7 +113,7 @@ jobs:
             -Dsonar.tests=tests
             -Dsonar.test.inclusions=tests/**
             -Dsonar.exclusions=build/**,godot/**,native/third_party/**
-            -Dsonar.coverage.exclusions=tests/**,native/third_party/**
+            -Dsonar.coverage.exclusions=tests/**,native/third_party/**,native/**/tests/**,native/**/*_tests.cpp
             -Dsonar.cfamily.compile-commands=build/compile_commands.json
             -Dsonar.coverageReportPaths=sonar-coverage.xml
             -Dsonar.javascript.file.suffixes=-
