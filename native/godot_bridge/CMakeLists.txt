@@ -1,12 +1,12 @@
 set(TARGET_NAME godot_bridge)
 
 add_library(${TARGET_NAME} SHARED
-    src/register_types.cpp
-    src/solar_system_bridge.cpp
+    src/bridge/register_types.cpp
+    src/bridge/solar_system_bridge.cpp
 )
 
 target_include_directories(${TARGET_NAME} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(${TARGET_NAME}
