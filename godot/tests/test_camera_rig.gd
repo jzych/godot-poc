@@ -15,15 +15,19 @@ func _spawn_main_scene() -> Node3D:
 	autofree(scene)
 	return scene
 
-func _mouse_button_event(button_index: int, pressed: bool) -> InputEventMouseButton:
+func _mouse_button_event(button_index: int, pressed: bool, position: Vector2 = Vector2.ZERO) -> InputEventMouseButton:
 	var event := InputEventMouseButton.new()
 	event.button_index = button_index
 	event.pressed = pressed
+	event.position = position
+	event.global_position = position
 	return event
 
-func _mouse_motion_event(relative: Vector2) -> InputEventMouseMotion:
+func _mouse_motion_event(relative: Vector2, position: Vector2 = Vector2.ZERO) -> InputEventMouseMotion:
 	var event := InputEventMouseMotion.new()
 	event.relative = relative
+	event.position = position
+	event.global_position = position
 	return event
 
 func _wait_frames(count: int):
@@ -153,9 +157,9 @@ func test_drag_pan_requires_pan_hold_and_preserves_orientation():
 	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0)))
 	assert_eq(rig.focus_position, start, "Mouse motion should not pan without LMB held")
 
-	rig._unhandled_input(_mouse_button_event(1, true))
-	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0)))
-	rig._unhandled_input(_mouse_button_event(1, false))
+	rig._unhandled_input(_mouse_button_event(1, true, Vector2(20.0, 20.0)))
+	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0), Vector2(140.0, -60.0)))
+	rig._unhandled_input(_mouse_button_event(1, false, Vector2(140.0, -60.0)))
 
 	assert_eq(rig.focus_position.y, start.y, "Drag pan should preserve height")
 	assert_eq(rig.pan_plane_height, start.y, "Drag pan should keep the configured plane height")
@@ -173,11 +177,11 @@ func test_drag_pan_does_not_interfere_with_rotation():
 	var start_yaw: float = rig.yaw_degrees_value
 	var start_pitch: float = rig.pitch_degrees_value
 
-	rig._unhandled_input(_mouse_button_event(1, true))
+	rig._unhandled_input(_mouse_button_event(1, true, Vector2(20.0, 20.0)))
 	rig._unhandled_input(_mouse_button_event(2, true))
-	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0)))
+	rig._unhandled_input(_mouse_motion_event(Vector2(120.0, -80.0), Vector2(140.0, -60.0)))
 	rig._unhandled_input(_mouse_button_event(2, false))
-	rig._unhandled_input(_mouse_button_event(1, false))
+	rig._unhandled_input(_mouse_button_event(1, false, Vector2(140.0, -60.0)))
 
 	assert_eq(rig.focus_position, start_focus, "Drag pan should not move focus while rotation is active")
 	assert_gt(rig.yaw_degrees_value, start_yaw, "Rotation input should still update yaw")
@@ -242,9 +246,9 @@ func test_main_scene_wires_camera_rig():
 	)
 
 	var focus_after_keyboard_pan: Vector3 = rig.focus_position
-	rig._unhandled_input(_mouse_button_event(1, true))
-	rig._unhandled_input(_mouse_motion_event(Vector2(50.0, -40.0)))
-	rig._unhandled_input(_mouse_button_event(1, false))
+	rig._unhandled_input(_mouse_button_event(1, true, Vector2(20.0, 20.0)))
+	rig._unhandled_input(_mouse_motion_event(Vector2(50.0, -40.0), Vector2(70.0, -20.0)))
+	rig._unhandled_input(_mouse_button_event(1, false, Vector2(70.0, -20.0)))
 
 	var drag_pan_delta: Vector3 = rig.focus_position - focus_after_keyboard_pan
 	assert_eq(rig.focus_position.y, starting_height, "Main scene drag pan should preserve height")

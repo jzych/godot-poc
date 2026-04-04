@@ -21,6 +21,7 @@ var bridge: SolarSystemBridge
 var body_nodes: Array = []
 var hovered_body_view = null
 var selected_body_view = null
+var locked_body_view = null
 var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
@@ -55,11 +56,21 @@ func _process(_delta):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
 
+	_sync_focus_lock_target()
 	_queue_interaction_sync()
 
 func _input(event):
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
+			update_hover_from_screen_position(event.position)
+			if event.double_click and hovered_body_view != null:
+				_set_selected_body(hovered_body_view)
+				_start_focus_lock(hovered_body_view)
+				_left_click_pressed = false
+				_left_click_dragging = false
+				get_viewport().set_input_as_handled()
+				return
+
 			_left_click_pressed = true
 			_left_click_dragging = false
 			_left_click_press_position = event.position
@@ -160,6 +171,13 @@ func _sync_body_labels():
 		selected_body_view
 	)
 
+func _start_focus_lock(body_view):
+	if body_view == null or camera_rig == null:
+		return
+
+	locked_body_view = body_view
+	camera_rig.start_focus_lock(body_view.global_position, body_view.body_radius)
+
 func _queue_interaction_sync():
 	if _interaction_sync_queued:
 		return
@@ -175,3 +193,13 @@ func _sync_interaction_from_camera():
 
 	update_hover_from_screen_position(get_viewport().get_mouse_position())
 	_sync_body_labels()
+
+func _sync_focus_lock_target():
+	if locked_body_view == null or camera_rig == null:
+		return
+
+	if not camera_rig.is_focus_lock_active():
+		locked_body_view = null
+		return
+
+	camera_rig.update_focus_lock_target(locked_body_view.global_position)
