@@ -13,6 +13,8 @@ SimulationSnapshot make_snapshot(const solar::Simulation& sim) {
             .name = body.name,
             .position_km = body.position_km,
             .color = body.color,
+            .orbit = body.orbit,
+            .rotation = body.rotation,
         });
     }
 

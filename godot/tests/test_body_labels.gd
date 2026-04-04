@@ -64,11 +64,21 @@ func test_hovered_body_shows_label_with_body_name():
 	scene.update_hover_from_screen_position(camera.unproject_position(earth.global_position))
 
 	var label = scene.body_label_overlay.get_label_for_body_index(earth.body_index)
+	var earth_state: Dictionary = scene.bridge.get_body_state(earth.body_index)
 
 	assert_not_null(label, "Hovering a body should create a label entry for it")
 	assert_true(label.visible, "Hovered body label should be visible")
 	assert_eq(label.get_label_text(), earth.body_label, "Hovered label should display the body name")
+	assert_eq(
+		label.get_secondary_text(),
+		"Central: %s | Period: %s" % [
+			earth_state["central_body_name"],
+			earth_state["orbital_period_ydhms"],
+		],
+		"Hovered label should show central body and orbital period on the second line"
+	)
 	assert_eq(scene.body_label_overlay.label_appearance.font_size, 18, "Default label font size should match the requested style")
+	assert_eq(scene.body_label_overlay.label_appearance.secondary_font_size, 16, "Secondary label line should use font size 16")
 
 func test_selected_body_label_persists_after_hover_exit():
 	var scene = _spawn_main_scene()

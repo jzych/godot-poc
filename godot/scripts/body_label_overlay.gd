@@ -33,7 +33,11 @@ func update_labels(camera: Camera3D, hovered_body_view, selected_body_view):
 	for body_view in target_body_views:
 		active_body_indexes[body_view.body_index] = true
 		var label = _get_or_create_label(body_view)
-		label.configure(label_appearance, body_view.body_label)
+		label.configure(
+			label_appearance,
+			body_view.body_label,
+			body_view.body_secondary_label
+		)
 		var layout: Dictionary = _compute_label_layout(camera, body_view)
 		label.visible = layout.get("visible", false)
 		if label.visible:
@@ -114,6 +118,7 @@ func _build_default_appearance():
 
 	appearance.font = font
 	appearance.font_size = 18
+	appearance.secondary_font_size = 16
 	appearance.text_color = Color(0.7, 0.85, 1.0, 1.0)
 	appearance.background_color = Color(0.0, 0.0, 0.0, 0.55)
 	return appearance

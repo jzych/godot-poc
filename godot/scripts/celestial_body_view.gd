@@ -10,7 +10,10 @@ const DEFAULT_HIGHLIGHT_COLOR := Color.WHITE
 
 var body_index: int = -1
 var body_label: String = ""
+var body_secondary_label: String = ""
 var body_radius: float = 1.0
+var orbit_state: Dictionary = {}
+var rotation_state: Dictionary = {}
 
 var _body_mesh_resource: Mesh = null
 var _base_color: Color = Color.WHITE
@@ -30,7 +33,10 @@ func _ready():
 func configure(index: int, state: Dictionary, radius_units: float):
 	body_index = index
 	body_label = str(state.get("name", "Body"))
+	body_secondary_label = _build_secondary_label(state)
 	body_radius = radius_units
+	orbit_state = state.get("orbit", {})
+	rotation_state = state.get("rotation", {})
 	_body_mesh_resource = _build_sphere_mesh(radius_units)
 	_base_color = state.get("color", Color.WHITE)
 	name = body_label
@@ -89,6 +95,18 @@ func _build_sphere_mesh(radius_units: float) -> SphereMesh:
 	sphere.radius = radius_units
 	sphere.height = radius_units * 2.0
 	return sphere
+
+func _build_secondary_label(state: Dictionary) -> String:
+	var parts: Array[String] = []
+	var central_body_name := str(state.get("central_body_name", ""))
+	var orbital_period_text := str(state.get("orbital_period_ydhms", ""))
+
+	if not central_body_name.is_empty():
+		parts.append("Central: %s" % central_body_name)
+	if not orbital_period_text.is_empty():
+		parts.append("Period: %s" % orbital_period_text)
+
+	return " | ".join(parts)
 
 func _apply_highlight_state():
 	if not is_node_ready() or _outline_material == null:
