@@ -24,9 +24,11 @@ var selected_body_view = null
 var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
+var _interaction_sync_queued: bool = false
 
 @onready var camera_rig: CosmosCameraRig = $CosmosCameraRig
 @onready var bodies_container: Node3D = $BodiesContainer
+@onready var body_label_overlay = $BodyLabelOverlay
 
 func _ready():
 	bridge = SolarSystemBridge.new()
@@ -53,7 +55,7 @@ func _process(_delta):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
 
-	update_hover_from_screen_position(get_viewport().get_mouse_position())
+	_queue_interaction_sync()
 
 func _input(event):
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -145,3 +147,31 @@ func _refresh_highlights():
 			body_view.set_highlight(true, SELECTED_HIGHLIGHT_COLOR)
 		else:
 			body_view.set_highlight(false, HOVER_HIGHLIGHT_COLOR)
+
+	_sync_body_labels()
+
+func _sync_body_labels():
+	if body_label_overlay == null or camera_rig == null:
+		return
+
+	body_label_overlay.update_labels(
+		camera_rig.get_camera_node(),
+		hovered_body_view,
+		selected_body_view
+	)
+
+func _queue_interaction_sync():
+	if _interaction_sync_queued:
+		return
+
+	_interaction_sync_queued = true
+	call_deferred("_sync_interaction_from_camera")
+
+func _sync_interaction_from_camera():
+	_interaction_sync_queued = false
+
+	if bridge == null or body_nodes.is_empty():
+		return
+
+	update_hover_from_screen_position(get_viewport().get_mouse_position())
+	_sync_body_labels()
