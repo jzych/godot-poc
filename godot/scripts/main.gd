@@ -3,6 +3,9 @@ extends Node3D
 const KM_PER_AU := 149597870.7
 const AU_TO_UNITS := 10000.0
 const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
+const BODY_VIEW_SCENE := preload("res://scenes/celestial_body_view.tscn")
+const BODY_COLLISION_MASK := 1
+const PICK_DISTANCE := 50000.0
 
 # Real radii in km
 const BODY_RADII := {
@@ -12,8 +15,11 @@ const BODY_RADII := {
 }
 
 var bridge: SolarSystemBridge
-var body_nodes: Array[MeshInstance3D] = []
+var body_nodes: Array = []
+var hovered_body_view = null
+
 @onready var camera_rig: CosmosCameraRig = $CosmosCameraRig
+@onready var bodies_container: Node3D = $BodiesContainer
 
 func _ready():
 	bridge = SolarSystemBridge.new()
@@ -26,25 +32,11 @@ func _ready():
 func _spawn_bodies():
 	for i in range(bridge.get_body_count()):
 		var state = bridge.get_body_state(i)
-		var mesh_instance = MeshInstance3D.new()
-		var sphere = SphereMesh.new()
-
 		var radius_units: float = BODY_RADII.get(state["name"], 1000.0) * KM_TO_UNITS
-		sphere.radius = radius_units
-		sphere.height = radius_units * 2.0
-
-		mesh_instance.mesh = sphere
-
-		var mat = StandardMaterial3D.new()
-		mat.albedo_color = state["color"]
-		mat.emission_enabled = true
-		mat.emission = state["color"]
-		mat.emission_energy_multiplier = 0.5
-		mesh_instance.material_override = mat
-
-		mesh_instance.name = state["name"]
-		add_child(mesh_instance)
-		body_nodes.append(mesh_instance)
+		var body_view = BODY_VIEW_SCENE.instantiate()
+		bodies_container.add_child(body_view)
+		body_view.configure(i, state, radius_units)
+		body_nodes.append(body_view)
 
 func _process(_delta):
 	if bridge == null or body_nodes.is_empty():
@@ -53,6 +45,8 @@ func _process(_delta):
 	for i in range(body_nodes.size()):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
+
+	update_hover_from_screen_position(get_viewport().get_mouse_position())
 
 func _setup_light():
 	var light = DirectionalLight3D.new()
@@ -69,3 +63,52 @@ func _setup_camera():
 	var outward = earth_pos.normalized()
 	var camera_offset = outward * 3.0 + Vector3(0, 2.0, 0)
 	camera_rig.configure_from_offset(earth_pos, camera_offset)
+
+func update_hover_from_screen_position(mouse_position: Vector2):
+	if camera_rig == null:
+		_set_hovered_body(null)
+		return
+
+	var camera: Camera3D = camera_rig.get_camera_node()
+	var visible_rect: Rect2 = get_viewport().get_visible_rect()
+	if camera == null or not visible_rect.has_point(mouse_position):
+		_set_hovered_body(null)
+		return
+
+	var ray_origin: Vector3 = camera.project_ray_origin(mouse_position)
+	var ray_normal: Vector3 = camera.project_ray_normal(mouse_position)
+	var query := PhysicsRayQueryParameters3D.create(
+		ray_origin,
+		ray_origin + (ray_normal * PICK_DISTANCE)
+	)
+	# Camera-inside-body positions are currently treated as invalid and will be
+	# handled later, so hover picking intentionally keeps the default
+	# hit_from_inside = false behavior for now.
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	query.collision_mask = BODY_COLLISION_MASK
+
+	var result: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	_set_hovered_body(_resolve_body_view_from_hit(result))
+
+func _set_hovered_body(body_view):
+	if hovered_body_view == body_view:
+		return
+
+	if hovered_body_view != null:
+		hovered_body_view.set_hover_highlight(false)
+
+	hovered_body_view = body_view
+
+	if hovered_body_view != null:
+		hovered_body_view.set_hover_highlight(true)
+
+func _resolve_body_view_from_hit(result: Dictionary):
+	if result.is_empty():
+		return null
+
+	var collider: Variant = result.get("collider")
+	if collider is CollisionObject3D and collider.has_meta("body_view"):
+		return collider.get_meta("body_view")
+
+	return null
