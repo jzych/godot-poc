@@ -6,6 +6,7 @@ const BODY_OUTLINE_SHADER := preload("res://shaders/body_outline.gdshader")
 const BODY_COLLISION_LAYER := 1
 const MIN_OUTLINE_WIDTH := 0.01
 const OUTLINE_WIDTH_RATIO := 0.05
+const DEFAULT_HIGHLIGHT_COLOR := Color.WHITE
 
 var body_index: int = -1
 var body_label: String = ""
@@ -15,6 +16,8 @@ var _body_mesh_resource: Mesh = null
 var _base_color: Color = Color.WHITE
 var _outline_material: ShaderMaterial = null
 var _base_material: StandardMaterial3D = null
+var _highlight_visible: bool = false
+var _highlight_color: Color = DEFAULT_HIGHLIGHT_COLOR
 
 @onready var body_mesh: MeshInstance3D = $BodyMesh
 @onready var outline_mesh: MeshInstance3D = $OutlineMesh
@@ -34,10 +37,15 @@ func configure(index: int, state: Dictionary, radius_units: float):
 	_refresh_visuals()
 
 func is_highlight_visible() -> bool:
-	return outline_mesh.visible
+	return _highlight_visible
 
-func set_hover_highlight(visible: bool):
-	outline_mesh.visible = visible
+func get_highlight_color() -> Color:
+	return _highlight_color
+
+func set_highlight(visible: bool, color: Color = DEFAULT_HIGHLIGHT_COLOR):
+	_highlight_visible = visible
+	_highlight_color = color
+	_apply_highlight_state()
 
 func _refresh_visuals():
 	if not is_node_ready() or _body_mesh_resource == null:
@@ -46,7 +54,6 @@ func _refresh_visuals():
 	body_mesh.mesh = _body_mesh_resource
 	outline_mesh.mesh = _body_mesh_resource
 	outline_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	outline_mesh.visible = false
 
 	if _base_material == null:
 		_base_material = StandardMaterial3D.new()
@@ -66,6 +73,7 @@ func _refresh_visuals():
 		max(body_radius * OUTLINE_WIDTH_RATIO, MIN_OUTLINE_WIDTH)
 	)
 	outline_mesh.material_override = _outline_material
+	_apply_highlight_state()
 
 	var sphere_shape := SphereShape3D.new()
 	sphere_shape.radius = body_radius
@@ -81,3 +89,10 @@ func _build_sphere_mesh(radius_units: float) -> SphereMesh:
 	sphere.radius = radius_units
 	sphere.height = radius_units * 2.0
 	return sphere
+
+func _apply_highlight_state():
+	if not is_node_ready() or _outline_material == null:
+		return
+
+	outline_mesh.visible = _highlight_visible
+	_outline_material.set_shader_parameter("outline_color", _highlight_color)

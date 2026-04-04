@@ -6,6 +6,9 @@ const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
 const BODY_VIEW_SCENE := preload("res://scenes/celestial_body_view.tscn")
 const BODY_COLLISION_MASK := 1
 const PICK_DISTANCE := 50000.0
+const CLICK_DRAG_THRESHOLD := 6.0
+const HOVER_HIGHLIGHT_COLOR := Color.WHITE
+const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
 
 # Real radii in km
 const BODY_RADII := {
@@ -17,6 +20,10 @@ const BODY_RADII := {
 var bridge: SolarSystemBridge
 var body_nodes: Array = []
 var hovered_body_view = null
+var selected_body_view = null
+var _left_click_pressed: bool = false
+var _left_click_dragging: bool = false
+var _left_click_press_position: Vector2 = Vector2.ZERO
 
 @onready var camera_rig: CosmosCameraRig = $CosmosCameraRig
 @onready var bodies_container: Node3D = $BodiesContainer
@@ -47,6 +54,21 @@ func _process(_delta):
 		body_nodes[i].position = state["position"]
 
 	update_hover_from_screen_position(get_viewport().get_mouse_position())
+
+func _input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_left_click_pressed = true
+			_left_click_dragging = false
+			_left_click_press_position = event.position
+		elif _left_click_pressed:
+			_left_click_pressed = false
+			if not _left_click_dragging:
+				update_hover_from_screen_position(event.position)
+				_set_selected_body(hovered_body_view)
+	elif event is InputEventMouseMotion and _left_click_pressed:
+		if event.position.distance_to(_left_click_press_position) >= CLICK_DRAG_THRESHOLD:
+			_left_click_dragging = true
 
 func _setup_light():
 	var light = DirectionalLight3D.new()
@@ -95,13 +117,15 @@ func _set_hovered_body(body_view):
 	if hovered_body_view == body_view:
 		return
 
-	if hovered_body_view != null:
-		hovered_body_view.set_hover_highlight(false)
-
 	hovered_body_view = body_view
+	_refresh_highlights()
 
-	if hovered_body_view != null:
-		hovered_body_view.set_hover_highlight(true)
+func _set_selected_body(body_view):
+	if selected_body_view == body_view:
+		return
+
+	selected_body_view = body_view
+	_refresh_highlights()
 
 func _resolve_body_view_from_hit(result: Dictionary):
 	if result.is_empty():
@@ -112,3 +136,12 @@ func _resolve_body_view_from_hit(result: Dictionary):
 		return collider.get_meta("body_view")
 
 	return null
+
+func _refresh_highlights():
+	for body_view in body_nodes:
+		if body_view == hovered_body_view:
+			body_view.set_highlight(true, HOVER_HIGHLIGHT_COLOR)
+		elif body_view == selected_body_view:
+			body_view.set_highlight(true, SELECTED_HIGHLIGHT_COLOR)
+		else:
+			body_view.set_highlight(false, HOVER_HIGHLIGHT_COLOR)
