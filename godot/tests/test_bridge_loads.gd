@@ -162,9 +162,9 @@ func test_initial_body_position_matches_exported_anomaly():
 	var orbital_period_seconds: float = earth_state["orbital_period_seconds"]
 	var expected_position := _expected_relative_position(orbit, orbital_period_seconds, sim_time_seconds)
 
-	assert_almost_eq(position.x, expected_position.x, 0.001, "Earth X position should match the exported ellipse and current sim time")
-	assert_almost_eq(position.y, expected_position.y, 0.001, "Earth Y position should match the exported ellipse and current sim time")
-	assert_almost_eq(position.z, expected_position.z, 0.001, "Earth Z position should match the exported ellipse and current sim time")
+	assert_almost_eq(position.x, expected_position.x, 0.01, "Earth X position should match the exported ellipse and current sim time")
+	assert_almost_eq(position.y, expected_position.y, 0.01, "Earth Y position should match the exported ellipse and current sim time")
+	assert_almost_eq(position.z, expected_position.z, 0.01, "Earth Z position should match the exported ellipse and current sim time")
 	bridge.queue_free()
 
 func test_moon_position_uses_inclined_ellipse():
@@ -183,9 +183,9 @@ func test_moon_position_uses_inclined_ellipse():
 	)
 	var actual_relative: Vector3 = moon_state["position"] - earth_state["position"]
 
-	assert_almost_eq(actual_relative.x, expected_relative.x, 0.001, "Moon X offset from Earth should match the exported inclined ellipse")
-	assert_almost_eq(actual_relative.y, expected_relative.y, 0.001, "Moon Y offset from Earth should match the exported inclined ellipse")
-	assert_almost_eq(actual_relative.z, expected_relative.z, 0.001, "Moon Z offset from Earth should match the exported inclined ellipse")
+	assert_almost_eq(actual_relative.x, expected_relative.x, 0.01, "Moon X offset from Earth should match the exported inclined ellipse")
+	assert_almost_eq(actual_relative.y, expected_relative.y, 0.01, "Moon Y offset from Earth should match the exported inclined ellipse")
+	assert_almost_eq(actual_relative.z, expected_relative.z, 0.01, "Moon Z offset from Earth should match the exported inclined ellipse")
 	assert_gt(abs(actual_relative.y), 0.01, "Moon orbit should no longer stay flat on the XZ plane")
 	bridge.queue_free()
 

@@ -4,6 +4,7 @@ const KM_PER_AU := 149597870.7
 const AU_TO_UNITS := 10000.0
 const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
 const BODY_VIEW_SCENE := preload("res://scenes/celestial_body_view.tscn")
+const ORBIT_LANE_SCRIPT := preload("res://scripts/orbit_lane_view.gd")
 const BODY_COLLISION_MASK := 1
 const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
@@ -19,6 +20,7 @@ const BODY_RADII := {
 
 var bridge: SolarSystemBridge
 var body_nodes: Array = []
+var orbit_lane_nodes := {}
 var hovered_body_view = null
 var selected_body_view = null
 var locked_body_view = null
@@ -28,6 +30,7 @@ var _left_click_press_position: Vector2 = Vector2.ZERO
 var _interaction_sync_queued: bool = false
 
 @onready var camera_rig: CosmosCameraRig = $CosmosCameraRig
+@onready var orbit_lanes_container: Node3D = $OrbitLanesContainer
 @onready var bodies_container: Node3D = $BodiesContainer
 @onready var body_label_overlay = $BodyLabelOverlay
 
@@ -36,6 +39,7 @@ func _ready():
 	add_child(bridge)
 	await get_tree().process_frame
 	_spawn_bodies()
+	_spawn_orbit_lanes()
 	_setup_light()
 	_setup_camera()
 
@@ -49,6 +53,26 @@ func _spawn_bodies():
 		body_view.update_simulation_state(state, bridge.get_sim_time())
 		body_nodes.append(body_view)
 
+func _spawn_orbit_lanes():
+	for body_view in body_nodes:
+		var state = bridge.get_body_state(body_view.body_index)
+		var orbit: Dictionary = state.get("orbit", {})
+		var central_body_index := int(orbit.get("central_body_index", -1))
+		if central_body_index < 0:
+			continue
+		if float(state.get("orbital_period_seconds", 0.0)) <= 0.0:
+			continue
+		if float(orbit.get("semi_major_axis_km", 0.0)) <= 0.0:
+			continue
+
+		var orbit_lane = ORBIT_LANE_SCRIPT.new()
+		orbit_lanes_container.add_child(orbit_lane)
+		orbit_lane.configure(body_view.body_index, state, bridge.get_sim_time())
+		orbit_lane.update_center_position(_get_orbit_center_position(central_body_index))
+		orbit_lane_nodes[body_view.body_index] = orbit_lane
+
+	_refresh_orbit_lanes()
+
 func _process(_delta):
 	if bridge == null or body_nodes.is_empty():
 		return
@@ -59,6 +83,7 @@ func _process(_delta):
 		body_nodes[i].position = state["position"]
 		body_nodes[i].update_simulation_state(state, sim_time_seconds)
 
+	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
 	_queue_interaction_sync()
 
@@ -162,7 +187,26 @@ func _refresh_highlights():
 		else:
 			body_view.set_highlight(false, HOVER_HIGHLIGHT_COLOR)
 
+	_refresh_orbit_lanes()
 	_sync_body_labels()
+
+func _refresh_orbit_lanes():
+	var selected_body_index: int = selected_body_view.body_index if selected_body_view != null else -1
+	for body_index in orbit_lane_nodes.keys():
+		orbit_lane_nodes[body_index].set_selected(body_index == selected_body_index)
+
+func _sync_orbit_lanes(sim_time_seconds: float):
+	for orbit_lane in orbit_lane_nodes.values():
+		orbit_lane.update_center_position(_get_orbit_center_position(orbit_lane.central_body_index))
+		orbit_lane.update_simulation_phase(sim_time_seconds)
+
+func _get_orbit_center_position(central_body_index: int) -> Vector3:
+	if central_body_index < 0 or central_body_index >= body_nodes.size():
+		return Vector3.ZERO
+	return body_nodes[central_body_index].position
+
+func get_orbit_lane_for_body_index(body_index: int):
+	return orbit_lane_nodes.get(body_index)
 
 func _sync_body_labels():
 	if body_label_overlay == null or camera_rig == null:
