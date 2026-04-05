@@ -46,15 +46,18 @@ func _spawn_bodies():
 		var body_view = BODY_VIEW_SCENE.instantiate()
 		bodies_container.add_child(body_view)
 		body_view.configure(i, state, radius_units)
+		body_view.update_simulation_state(state, bridge.get_sim_time())
 		body_nodes.append(body_view)
 
 func _process(_delta):
 	if bridge == null or body_nodes.is_empty():
 		return
 
+	var sim_time_seconds: float = bridge.get_sim_time()
 	for i in range(body_nodes.size()):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
+		body_nodes[i].update_simulation_state(state, sim_time_seconds)
 
 	_sync_focus_lock_target()
 	_queue_interaction_sync()
