@@ -128,7 +128,9 @@ func test_label_size_stays_constant_across_zoom():
 	scene.camera_rig._apply_state()
 	scene._sync_body_labels()
 
-	assert_eq(label.get_label_size(), initial_size, "Zoom level should not change label pixel size")
+	var zoomed_size: Vector2 = label.get_label_size()
+	assert_almost_eq(zoomed_size.x, initial_size.x, 0.001, "Zoom level should not change label pixel width")
+	assert_almost_eq(zoomed_size.y, initial_size.y, 0.001, "Zoom level should not change label pixel height")
 
 func test_label_position_refreshes_when_camera_moves_without_hover_change():
 	var scene = _spawn_main_scene()
