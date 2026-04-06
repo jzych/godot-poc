@@ -2,6 +2,7 @@
 
 #include <godot_cpp/classes/node.hpp>
 
+#include "massive_body/default_bodies.h"
 #include "simulation/simulation.h"
 
 namespace solar {
@@ -19,6 +20,7 @@ public:
     bool is_simulation_running() const;
     int get_body_count() const;
     godot::Dictionary get_body_state(int index) const;
+    godot::String format_duration_ydhms(double total_seconds) const;
     double get_sim_time() const;
 
 protected:

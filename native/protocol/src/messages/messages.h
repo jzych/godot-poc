@@ -13,6 +13,8 @@ struct BodySnapshot {
     std::string name;
     solar::Vec3 position_km;
     solar::Color3 color;
+    solar::OrbitParameters orbit;
+    solar::RotationParameters rotation;
 };
 
 struct SimulationSnapshot {

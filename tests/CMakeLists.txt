@@ -15,6 +15,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(backend_core_tests
     ${CMAKE_SOURCE_DIR}/native/backend_core/src/simulation/tests/simulation_tests.cpp
     ${CMAKE_SOURCE_DIR}/native/backend_core/src/massive_body/tests/massive_body_tests.cpp
+    ${CMAKE_SOURCE_DIR}/native/backend_core/src/time/tests/duration_format_tests.cpp
 )
 
 target_link_libraries(backend_core_tests
