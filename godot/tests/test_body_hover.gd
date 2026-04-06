@@ -33,6 +33,12 @@ func _click_at(scene, position: Vector2):
 	scene._input(_mouse_button_event(MOUSE_BUTTON_LEFT, true, position))
 	scene._input(_mouse_button_event(MOUSE_BUTTON_LEFT, false, position))
 
+func _frame_scene_for_multi_body_visibility(scene, orthographic_size: float = 80.0):
+	scene.camera_rig.current_orthographic_size = orthographic_size
+	scene.camera_rig.target_orthographic_size = orthographic_size
+	scene.camera_rig._apply_state()
+	scene._sync_interaction_from_camera()
+
 func _find_background_position(scene) -> Vector2:
 	var viewport_size: Vector2 = scene.get_viewport().get_visible_rect().size
 	var candidates := [
@@ -115,6 +121,7 @@ func test_hovering_another_body_keeps_selected_body_highlighted():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
 	var hovered_target = _find_distinct_hover_target(scene, earth)
@@ -176,4 +183,50 @@ func test_drag_pan_gesture_does_not_clear_selection():
 		earth.get_highlight_color(),
 		SELECTED_HIGHLIGHT_COLOR,
 		"Selection highlight should remain in the selected-only state after an LMB drag pan"
+	)
+
+func test_hover_picking_works_at_orthographic_zoom_bounds():
+	var scene = _spawn_main_scene()
+	await _wait_frames(2)
+
+	var earth = scene.body_nodes[1]
+	var camera: Camera3D = scene.camera_rig.get_camera_node()
+
+	scene.camera_rig.current_orthographic_size = scene.camera_rig.min_orthographic_size
+	scene.camera_rig.target_orthographic_size = scene.camera_rig.min_orthographic_size
+	scene.camera_rig._apply_state()
+	scene.update_hover_from_screen_position(camera.unproject_position(earth.global_position))
+	assert_eq(scene.hovered_body_view, earth, "Hover picking should still resolve the focused body at minimum orthographic zoom")
+
+	scene.camera_rig.current_orthographic_size = 200.0
+	scene.camera_rig.target_orthographic_size = 200.0
+	scene.camera_rig._apply_state()
+	scene.update_hover_from_screen_position(camera.unproject_position(earth.global_position))
+	assert_eq(scene.hovered_body_view, earth, "Hover picking should still resolve the focused body at wide orthographic zoom")
+
+func test_camera_clearance_pushes_focus_outside_large_body_before_hover_picking():
+	var scene = _spawn_main_scene()
+	await _wait_frames(2)
+
+	var sun = scene.body_nodes[0]
+	scene.camera_rig.current_orthographic_size = 20000.0
+	scene.camera_rig.target_orthographic_size = 20000.0
+	scene.camera_rig.focus_position = sun.global_position
+	scene.camera_rig.pan_plane_height = sun.global_position.y
+	scene.camera_rig._apply_state()
+
+	scene._sync_camera_clearance()
+	scene.update_hover_from_screen_position(
+		scene.camera_rig.get_camera_node().unproject_position(sun.global_position)
+	)
+
+	assert_gt(
+		scene.camera_rig.get_camera_node().global_position.distance_to(sun.global_position),
+		sun.body_radius,
+		"Camera clearance should push the camera outside a large body before hover picking runs"
+	)
+	assert_eq(
+		scene.hovered_body_view,
+		sun,
+		"Hover picking should keep working after focus is moved onto a large body at wide orthographic zoom"
 	)

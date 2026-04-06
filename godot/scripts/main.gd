@@ -10,6 +10,8 @@ const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
 const HOVER_HIGHLIGHT_COLOR := Color.WHITE
 const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
+const CAMERA_BODY_CLEARANCE_RATIO := 0.05
+const CAMERA_BODY_CLEARANCE_MIN := 0.1
 
 # Real radii in km
 const BODY_RADII := {
@@ -86,6 +88,7 @@ func _process(_delta):
 
 	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
+	_sync_camera_clearance()
 	_queue_interaction_sync()
 
 func _input(event):
@@ -132,6 +135,7 @@ func _setup_camera():
 	var outward = earth_pos.normalized()
 	var camera_offset = outward * 3.0 + Vector3(0, 2.0, 0)
 	camera_rig.configure_from_offset(earth_pos, camera_offset)
+	_sync_camera_clearance()
 
 func update_hover_from_screen_position(mouse_position: Vector2):
 	if camera_rig == null:
@@ -150,9 +154,9 @@ func update_hover_from_screen_position(mouse_position: Vector2):
 		ray_origin,
 		ray_origin + (ray_normal * PICK_DISTANCE)
 	)
-	# Camera-inside-body positions are currently treated as invalid and will be
-	# handled later, so hover picking intentionally keeps the default
-	# hit_from_inside = false behavior for now.
+	# The camera rig maintains a body-clearance floor on orbit distance, so
+	# hover picking intentionally keeps the default hit_from_inside = false
+	# behavior here.
 	query.collide_with_areas = false
 	query.collide_with_bodies = true
 	query.collision_mask = BODY_COLLISION_MASK
@@ -277,3 +281,62 @@ func _sync_focus_lock_target():
 		return
 
 	camera_rig.update_focus_lock_target(locked_body_view.global_position)
+
+func _sync_camera_clearance():
+	if camera_rig == null or body_nodes.is_empty():
+		return
+
+	var camera: Camera3D = camera_rig.get_camera_node()
+	if camera == null:
+		return
+
+	var offset: Vector3 = camera.global_position - camera_rig.focus_position
+	if offset.length_squared() <= 0.000001:
+		camera_rig.set_minimum_safe_distance(camera_rig.min_distance)
+		return
+
+	var desired_distance: float = max(camera_rig.current_distance, camera_rig.target_distance)
+	var ray_direction: Vector3 = offset.normalized()
+	var required_distance: float = camera_rig.min_distance
+
+	for body_view in body_nodes:
+		var clearance_radius: float = body_view.body_radius + max(
+			body_view.body_radius * CAMERA_BODY_CLEARANCE_RATIO,
+			CAMERA_BODY_CLEARANCE_MIN
+		)
+		required_distance = max(
+			required_distance,
+			_get_required_camera_distance_for_body(
+				camera_rig.focus_position,
+				ray_direction,
+				desired_distance,
+				body_view.global_position,
+				clearance_radius
+			)
+		)
+
+	camera_rig.set_minimum_safe_distance(required_distance)
+
+func _get_required_camera_distance_for_body(
+	ray_origin: Vector3,
+	ray_direction: Vector3,
+	desired_distance: float,
+	sphere_center: Vector3,
+	sphere_radius: float
+) -> float:
+	var origin_to_center: Vector3 = ray_origin - sphere_center
+	var projection: float = ray_direction.dot(origin_to_center)
+	var discriminant: float = (projection * projection) - (
+		origin_to_center.length_squared() - (sphere_radius * sphere_radius)
+	)
+	if discriminant < 0.0:
+		return 0.0
+
+	var sqrt_discriminant: float = sqrt(discriminant)
+	var near_distance: float = -projection - sqrt_discriminant
+	var far_distance: float = -projection + sqrt_discriminant
+	if far_distance <= 0.0:
+		return 0.0
+	if desired_distance < near_distance or desired_distance > far_distance:
+		return 0.0
+	return far_distance

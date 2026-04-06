@@ -1,13 +1,16 @@
 extends Node3D
 class_name CosmosCameraRig
 
-const FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER := 3.0
-
 @export var rotation_sensitivity := 0.2
 @export var pitch_min_deg := -80.0
 @export var pitch_max_deg := 80.0
+@export var default_orthographic_size := 5.5
+@export var min_orthographic_size := 0.5
+@export var max_orthographic_size := 20000.0
+@export var focus_lock_orthographic_size_radius_multiplier := 6.0
 @export var min_distance := 0.5
 @export var max_distance := 20000.0
+@export var focus_lock_min_distance_radius_multiplier := 3.0
 @export var zoom_step_ratio := 0.15
 @export var zoom_smoothing_speed := 8.0
 @export var pan_speed_base := 6.0
@@ -16,6 +19,7 @@ const FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER := 3.0
 @export var focus_lock_smoothing_speed := 8.0
 @export var focus_lock_snap_distance := 0.01
 @export var distance_snap_threshold := 0.01
+@export var orthographic_size_snap_threshold := 0.01
 
 var focus_position: Vector3 = Vector3.ZERO
 @export var pan_plane_height := 0.0
@@ -23,6 +27,9 @@ var yaw_degrees_value: float = 0.0
 var pitch_degrees_value: float = -35.0
 var current_distance: float = 3.6055513
 var target_distance: float = 3.6055513
+var minimum_safe_distance: float = 0.5
+var current_orthographic_size: float = 5.5
+var target_orthographic_size: float = 5.5
 var focus_lock_target_position: Vector3 = Vector3.ZERO
 var _focus_lock_transition_offset: Vector3 = Vector3.ZERO
 
@@ -41,14 +48,24 @@ func _ready():
 	_ensure_input_actions()
 	current_distance = clamp(current_distance, min_distance, max_distance)
 	target_distance = clamp(target_distance, min_distance, max_distance)
+	minimum_safe_distance = clamp(minimum_safe_distance, min_distance, max_distance)
+	current_orthographic_size = clamp(current_orthographic_size, min_orthographic_size, max_orthographic_size)
+	target_orthographic_size = clamp(target_orthographic_size, min_orthographic_size, max_orthographic_size)
+	current_distance = max(current_distance, _get_effective_target_distance())
 	_apply_state()
 
 func _process(delta):
 	var needs_apply: bool = false
 	var focus_snap_squared: float = pow(focus_lock_snap_distance, 2)
-	var distance_offset: float = absf(current_distance - target_distance)
+	var effective_target_distance: float = _get_effective_target_distance()
+	if current_distance < effective_target_distance:
+		current_distance = effective_target_distance
+		needs_apply = true
+	var distance_offset: float = absf(current_distance - effective_target_distance)
+	var orthographic_size_offset: float = absf(current_orthographic_size - target_orthographic_size)
 	var focus_transition_settled: bool = true
 	var distance_transition_settled: bool = true
+	var orthographic_size_transition_settled: bool = true
 
 	if _focus_lock_active:
 		if _focus_lock_transition_active:
@@ -73,17 +90,28 @@ func _process(delta):
 		pan_plane_height = focus_position.y
 
 	if distance_offset <= distance_snap_threshold:
-		current_distance = target_distance
+		current_distance = effective_target_distance
 	else:
-		var weight: float = clamp(delta * zoom_smoothing_speed, 0.0, 1.0)
-		current_distance = lerpf(current_distance, target_distance, weight)
-		if absf(current_distance - target_distance) <= distance_snap_threshold:
-			current_distance = target_distance
+		var weight: float = clamp(delta * focus_lock_smoothing_speed, 0.0, 1.0)
+		current_distance = lerpf(current_distance, effective_target_distance, weight)
+		if absf(current_distance - effective_target_distance) <= distance_snap_threshold:
+			current_distance = effective_target_distance
 		else:
 			distance_transition_settled = false
 		needs_apply = true
 
-	if _focus_lock_transition_active and focus_transition_settled and distance_transition_settled:
+	if orthographic_size_offset <= orthographic_size_snap_threshold:
+		current_orthographic_size = target_orthographic_size
+	else:
+		var zoom_weight: float = clamp(delta * zoom_smoothing_speed, 0.0, 1.0)
+		current_orthographic_size = lerpf(current_orthographic_size, target_orthographic_size, zoom_weight)
+		if absf(current_orthographic_size - target_orthographic_size) <= orthographic_size_snap_threshold:
+			current_orthographic_size = target_orthographic_size
+		else:
+			orthographic_size_transition_settled = false
+		needs_apply = true
+
+	if _focus_lock_transition_active and focus_transition_settled and distance_transition_settled and orthographic_size_transition_settled:
 		_focus_lock_transition_offset = Vector3.ZERO
 		focus_position = focus_lock_target_position
 		pan_plane_height = focus_position.y
@@ -146,6 +174,8 @@ func configure_from_offset(new_focus_position: Vector3, offset: Vector3):
 	pan_plane_height = new_focus_position.y
 	current_distance = clamp(safe_offset.length(), min_distance, max_distance)
 	target_distance = current_distance
+	current_orthographic_size = clamp(default_orthographic_size, min_orthographic_size, max_orthographic_size)
+	target_orthographic_size = current_orthographic_size
 	_focus_lock_transition_offset = Vector3.ZERO
 
 	var horizontal_length: float = Vector2(safe_offset.x, safe_offset.z).length()
@@ -175,7 +205,11 @@ func apply_zoom_step(direction: float):
 		return
 
 	var zoom_factor: float = pow(1.0 + zoom_step_ratio, direction)
-	target_distance = clamp(target_distance * zoom_factor, min_distance, max_distance)
+	target_orthographic_size = clamp(
+		target_orthographic_size * zoom_factor,
+		min_orthographic_size,
+		max_orthographic_size
+	)
 
 func apply_keyboard_pan(input_vector: Vector2, delta: float):
 	if delta <= 0.0 or input_vector.length_squared() <= 0.0:
@@ -217,15 +251,20 @@ func _translate_focus_on_pan_plane(translation: Vector3):
 func start_focus_lock(target_focus_position: Vector3, body_radius: float):
 	_focus_lock_active = true
 	focus_lock_target_position = target_focus_position
-	target_distance = get_focus_lock_distance_for_radius(body_radius)
+	target_distance = max(current_distance, get_focus_lock_min_distance_for_radius(body_radius))
+	current_distance = max(current_distance, _get_effective_target_distance())
+	target_orthographic_size = get_focus_lock_orthographic_size_for_radius(body_radius)
 	_focus_lock_transition_offset = focus_position - target_focus_position
 	_focus_lock_transition_active = (
 		_focus_lock_transition_offset.length_squared() > pow(focus_lock_snap_distance, 2)
 		or absf(current_distance - target_distance) > distance_snap_threshold
+		or absf(current_orthographic_size - target_orthographic_size) > orthographic_size_snap_threshold
 	)
 	if not _focus_lock_transition_active:
 		_focus_lock_transition_offset = Vector3.ZERO
 		focus_position = focus_lock_target_position
+		current_distance = target_distance
+		current_orthographic_size = target_orthographic_size
 	pan_plane_height = focus_position.y
 
 func update_focus_lock_target(target_focus_position: Vector3):
@@ -248,9 +287,30 @@ func cancel_focus_lock():
 func is_focus_lock_active() -> bool:
 	return _focus_lock_active
 
-func get_focus_lock_distance_for_radius(body_radius: float) -> float:
+func set_minimum_safe_distance(distance_floor: float):
+	minimum_safe_distance = clamp(max(distance_floor, min_distance), min_distance, max_distance)
+	var effective_target_distance: float = _get_effective_target_distance()
+	if current_distance < effective_target_distance:
+		current_distance = effective_target_distance
+		_apply_state()
+
+func get_focus_lock_min_distance_for_radius(body_radius: float) -> float:
 	return clamp(
-		max(body_radius * FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER, min_distance),
+		max(body_radius * focus_lock_min_distance_radius_multiplier, min_distance),
+		min_distance,
+		max_distance
+	)
+
+func get_focus_lock_orthographic_size_for_radius(body_radius: float) -> float:
+	return clamp(
+		max(body_radius * focus_lock_orthographic_size_radius_multiplier, min_orthographic_size),
+		min_orthographic_size,
+		max_orthographic_size
+	)
+
+func _get_effective_target_distance() -> float:
+	return clamp(
+		max(target_distance, minimum_safe_distance),
 		min_distance,
 		max_distance
 	)
@@ -263,6 +323,8 @@ func _apply_state():
 	yaw_pivot.rotation_degrees = Vector3(0.0, yaw_degrees_value, 0.0)
 	pitch_pivot.rotation_degrees = Vector3(pitch_degrees_value, 0.0, 0.0)
 	camera.position = Vector3(0.0, 0.0, current_distance)
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = current_orthographic_size
 
 func _ensure_input_actions():
 	_ensure_action(&"camera_rotate_hold", [_make_mouse_button_event(2)])
@@ -312,4 +374,4 @@ func _get_pan_right() -> Vector3:
 	return right.normalized()
 
 func _get_pan_speed() -> float:
-	return pan_speed_base + (current_distance * pan_speed_distance_factor)
+	return pan_speed_base + (current_orthographic_size * pan_speed_distance_factor)

@@ -25,6 +25,12 @@ func _click_at(scene, position: Vector2):
 	scene._input(_mouse_button_event(MOUSE_BUTTON_LEFT, true, position))
 	scene._input(_mouse_button_event(MOUSE_BUTTON_LEFT, false, position))
 
+func _frame_scene_for_multi_body_visibility(scene, orthographic_size: float = 80.0):
+	scene.camera_rig.current_orthographic_size = orthographic_size
+	scene.camera_rig.target_orthographic_size = orthographic_size
+	scene.camera_rig._apply_state()
+	scene._sync_interaction_from_camera()
+
 func _find_background_position(scene) -> Vector2:
 	var viewport_size: Vector2 = scene.get_viewport().get_visible_rect().size
 	var candidates := [
@@ -102,6 +108,7 @@ func test_hovered_and_selected_bodies_show_two_labels():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
 	var hovered_target = _find_distinct_hover_target(scene, earth)
@@ -123,8 +130,8 @@ func test_label_size_stays_constant_across_zoom():
 	var label = scene.body_label_overlay.get_label_for_body_index(earth.body_index)
 	var initial_size: Vector2 = label.get_label_size()
 
-	scene.camera_rig.current_distance = 20.0
-	scene.camera_rig.target_distance = 20.0
+	scene.camera_rig.current_orthographic_size = 20.0
+	scene.camera_rig.target_orthographic_size = 20.0
 	scene.camera_rig._apply_state()
 	scene._sync_body_labels()
 
@@ -136,6 +143,7 @@ func test_label_position_refreshes_when_camera_moves_without_hover_change():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var moving_target = _find_distinct_hover_target(scene, earth)
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
@@ -174,3 +182,29 @@ func test_label_offset_tracks_projected_radius():
 		0.75,
 		"Label top-left corner should sit at 120% of the projected body radius"
 	)
+
+func test_label_projection_remains_valid_at_orthographic_zoom_bounds():
+	var scene = _spawn_main_scene()
+	await _wait_frames(2)
+
+	var earth = scene.body_nodes[1]
+	var camera: Camera3D = scene.camera_rig.get_camera_node()
+
+	scene.camera_rig.current_orthographic_size = scene.camera_rig.min_orthographic_size
+	scene.camera_rig.target_orthographic_size = scene.camera_rig.min_orthographic_size
+	scene.camera_rig._apply_state()
+	scene.update_hover_from_screen_position(camera.unproject_position(earth.global_position))
+	var min_zoom_label = scene.body_label_overlay.get_label_for_body_index(earth.body_index)
+	var min_zoom_radius: float = scene.body_label_overlay.get_projected_radius_for_body(camera, earth)
+
+	scene.camera_rig.current_orthographic_size = 200.0
+	scene.camera_rig.target_orthographic_size = 200.0
+	scene.camera_rig._apply_state()
+	scene._sync_body_labels()
+	scene.update_hover_from_screen_position(camera.unproject_position(earth.global_position))
+	var max_zoom_label = scene.body_label_overlay.get_label_for_body_index(earth.body_index)
+	var max_zoom_radius: float = scene.body_label_overlay.get_projected_radius_for_body(camera, earth)
+
+	assert_true(min_zoom_label.visible, "Label should remain visible at minimum orthographic zoom")
+	assert_true(max_zoom_label.visible, "Label should remain visible at wide orthographic zoom")
+	assert_gt(min_zoom_radius, max_zoom_radius, "Projected body radius should still scale with orthographic zoom size")

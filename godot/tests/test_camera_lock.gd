@@ -39,6 +39,12 @@ func _dispatch_input_event(event: InputEvent, frames: int = 1):
 	Input.parse_input_event(event)
 	await _wait_frames(frames)
 
+func _frame_scene_for_multi_body_visibility(scene, orthographic_size: float = 80.0):
+	scene.camera_rig.current_orthographic_size = orthographic_size
+	scene.camera_rig.target_orthographic_size = orthographic_size
+	scene.camera_rig._apply_state()
+	scene._sync_interaction_from_camera()
+
 func _find_distinct_hover_target(scene, excluded_body):
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
 
@@ -53,20 +59,39 @@ func _find_distinct_hover_target(scene, excluded_body):
 
 	return null
 
-func test_start_focus_lock_sets_radius_based_distance_without_changing_angles():
+func test_start_focus_lock_sets_orthographic_framing_without_changing_angles():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
 	await _wait_frames(1)
 
 	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
 	var initial_yaw: float = rig.yaw_degrees_value
 	var initial_pitch: float = rig.pitch_degrees_value
+	var initial_distance: float = rig.current_distance
 
-	rig.start_focus_lock(Vector3(20.0, 5.0, 20.0), 2.0)
+	rig.start_focus_lock(Vector3(20.0, 5.0, 20.0), 1.0)
 
 	assert_true(rig.is_focus_lock_active(), "Starting a focus lock should enable lock mode")
-	assert_eq(rig.target_distance, 6.0, "Lock distance should default to three times the body radius")
+	assert_eq(
+		rig.target_orthographic_size,
+		rig.get_focus_lock_orthographic_size_for_radius(1.0),
+		"Lock framing should derive from orthographic size instead of dolly distance"
+	)
+	assert_eq(rig.target_distance, initial_distance, "Lock should preserve orbit distance when the current distance is already safe")
 	assert_eq(rig.yaw_degrees_value, initial_yaw, "Focus lock should preserve yaw")
 	assert_eq(rig.pitch_degrees_value, initial_pitch, "Focus lock should preserve pitch")
+
+func test_focus_lock_increases_distance_only_when_body_is_too_large_for_current_orbit_distance():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
+	rig.start_focus_lock(Vector3(20.0, 5.0, 20.0), 2.0)
+
+	assert_eq(
+		rig.target_distance,
+		rig.get_focus_lock_min_distance_for_radius(2.0),
+		"Lock should only increase orbit distance enough to stay outside an oversized body"
+	)
 
 func test_focus_lock_smoothly_moves_focus_toward_target():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
@@ -174,14 +199,14 @@ func test_rotation_and_zoom_preserve_focus_lock_target():
 	var target_focus := Vector3(20.0, 5.0, 20.0)
 	rig.configure_from_offset(Vector3(10.0, 5.0, 10.0), Vector3(0.0, 2.0, 4.0))
 	rig.start_focus_lock(target_focus, 1.0)
-	var initial_target_distance: float = rig.target_distance
+	var initial_target_size: float = rig.target_orthographic_size
 
 	rig.apply_rotate_motion(Vector2(25.0, -10.0))
 	rig.apply_zoom_step(1.0)
 
 	assert_true(rig.is_focus_lock_active(), "Rotation and zoom should not cancel focus lock")
 	assert_eq(rig.focus_lock_target_position, target_focus, "Rotation and zoom should not change the locked focus target")
-	assert_gt(rig.target_distance, initial_target_distance, "Zoom should still update the lock distance")
+	assert_gt(rig.target_orthographic_size, initial_target_size, "Zoom should still update orthographic size while locked")
 
 func test_locked_rotation_orbits_around_current_locked_body_position():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
@@ -203,6 +228,7 @@ func test_double_click_starts_focus_lock_on_selected_body():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var focus_target = _find_distinct_hover_target(scene, earth)
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
@@ -222,16 +248,23 @@ func test_double_click_starts_focus_lock_on_selected_body():
 	assert_eq(scene.locked_body_view, focus_target, "Double-click should lock onto the clicked body")
 	assert_true(scene.camera_rig.is_focus_lock_active(), "Double-click should start focus lock mode")
 	assert_eq(
-		scene.camera_rig.target_distance,
-		scene.camera_rig.get_focus_lock_distance_for_radius(focus_target.body_radius),
-		"Double-click should set the lock distance from body radius"
+		scene.camera_rig.target_orthographic_size,
+		scene.camera_rig.get_focus_lock_orthographic_size_for_radius(focus_target.body_radius),
+		"Double-click should set orthographic lock framing from body radius"
 	)
+	assert_gte(
+		scene.camera_rig.target_distance,
+		scene.camera_rig.get_focus_lock_min_distance_for_radius(focus_target.body_radius),
+		"Double-click should keep a safe orbit distance outside the locked body"
+	)
+	assert_gt(scene.camera_rig.target_orthographic_size, 0.0, "Double-click should preserve a valid orthographic zoom size")
 	assert_false(scene.camera_rig._pan_active, "Double-click should not start pan-hold in the camera rig")
 
 func test_main_scene_pan_cancels_focus_lock():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var focus_target = _find_distinct_hover_target(scene, earth)
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
@@ -255,6 +288,7 @@ func test_main_scene_updates_focus_lock_target_from_locked_body_motion():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var focus_target = _find_distinct_hover_target(scene, earth)
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
@@ -283,6 +317,7 @@ func test_single_click_selection_does_not_cancel_existing_focus_lock():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
+	_frame_scene_for_multi_body_visibility(scene)
 	var earth = scene.body_nodes[1]
 	var locked_target = _find_distinct_hover_target(scene, earth)
 	var selected_target = _find_distinct_hover_target(scene, locked_target)
