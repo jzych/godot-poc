@@ -18,6 +18,12 @@ static func normalize_angle(angle_rad: float) -> float:
 		angle_rad -= TAU
 	return angle_rad
 
+static func normalize_angle_positive(angle_rad: float) -> float:
+	angle_rad = fmod(angle_rad, TAU)
+	if angle_rad < 0.0:
+		angle_rad += TAU
+	return angle_rad
+
 static func true_to_mean_anomaly(true_anomaly_rad: float, eccentricity: float) -> float:
 	if is_zero_approx(eccentricity):
 		return normalize_angle(true_anomaly_rad)
@@ -80,6 +86,43 @@ static func periapsis_direction(orbit: Dictionary, orbit_normal_direction: Vecto
 		ascending_node_direction = Vector3.RIGHT
 
 	return ascending_node_direction.rotated(orbit_normal_direction, argument_of_periapsis).normalized()
+
+static func semi_major_axis_km(orbit: Dictionary) -> float:
+	return float(orbit.get("semi_major_axis_km", 0.0))
+
+static func periapsis_distance_km(orbit: Dictionary) -> float:
+	var semi_major_axis: float = semi_major_axis_km(orbit)
+	var eccentricity: float = float(orbit.get("eccentricity", 0.0))
+	return semi_major_axis * (1.0 - eccentricity)
+
+static func apoapsis_distance_km(orbit: Dictionary) -> float:
+	var semi_major_axis: float = semi_major_axis_km(orbit)
+	var eccentricity: float = float(orbit.get("eccentricity", 0.0))
+	return semi_major_axis * (1.0 + eccentricity)
+
+static func periapsis_relative_position_units(orbit: Dictionary) -> Vector3:
+	var orbit_normal_direction: Vector3 = orbit_normal(orbit)
+	var periapsis_world_direction: Vector3 = periapsis_direction(orbit, orbit_normal_direction)
+	return periapsis_world_direction * (periapsis_distance_km(orbit) * KM_TO_UNITS)
+
+static func apoapsis_relative_position_units(orbit: Dictionary) -> Vector3:
+	return -periapsis_relative_position_units(orbit).normalized() * (apoapsis_distance_km(orbit) * KM_TO_UNITS)
+
+static func time_until_mean_anomaly(
+	orbit: Dictionary,
+	orbital_period_seconds: float,
+	sim_time_seconds: float,
+	target_mean_anomaly: float
+) -> float:
+	if orbital_period_seconds <= 0.0:
+		return 0.0
+
+	var current_mean_anomaly: float = normalize_angle_positive(
+		mean_anomaly_at_time(orbit, orbital_period_seconds, sim_time_seconds)
+	)
+	var normalized_target: float = normalize_angle_positive(target_mean_anomaly)
+	var delta_mean_anomaly: float = normalize_angle_positive(normalized_target - current_mean_anomaly)
+	return delta_mean_anomaly / (TAU / orbital_period_seconds)
 
 static func relative_position_units(orbit: Dictionary, orbital_period_seconds: float, sim_time_seconds: float) -> Vector3:
 	var eccentricity: float = float(orbit.get("eccentricity", 0.0))

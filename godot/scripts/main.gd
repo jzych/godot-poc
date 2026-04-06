@@ -33,6 +33,7 @@ var _interaction_sync_queued: bool = false
 @onready var orbit_lanes_container: Node3D = $OrbitLanesContainer
 @onready var bodies_container: Node3D = $BodiesContainer
 @onready var body_label_overlay = $BodyLabelOverlay
+@onready var orbit_marker_overlay = $OrbitMarkerOverlay
 
 func _ready():
 	bridge = SolarSystemBridge.new()
@@ -88,6 +89,11 @@ func _process(_delta):
 	_queue_interaction_sync()
 
 func _input(event):
+	if orbit_marker_overlay != null and orbit_marker_overlay.handle_input(event):
+		_sync_orbit_markers()
+		get_viewport().set_input_as_handled()
+		return
+
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			update_hover_from_screen_position(event.position)
@@ -188,7 +194,9 @@ func _refresh_highlights():
 			body_view.set_highlight(false, HOVER_HIGHLIGHT_COLOR)
 
 	_refresh_orbit_lanes()
+	_sync_orbit_markers()
 	_sync_body_labels()
+	_queue_interaction_sync()
 
 func _refresh_orbit_lanes():
 	var selected_body_index: int = selected_body_view.body_index if selected_body_view != null else -1
@@ -218,6 +226,24 @@ func _sync_body_labels():
 		selected_body_view
 	)
 
+func _sync_orbit_markers():
+	if orbit_marker_overlay == null or camera_rig == null or bridge == null:
+		return
+
+	var orbit_center := Vector3.ZERO
+	if selected_body_view != null:
+		orbit_center = _get_orbit_center_position(
+			int(selected_body_view.orbit_state.get("central_body_index", -1))
+		)
+
+	orbit_marker_overlay.update_markers(
+		camera_rig.get_camera_node(),
+		selected_body_view,
+		orbit_center,
+		bridge.get_sim_time(),
+		bridge
+	)
+
 func _start_focus_lock(body_view):
 	if body_view == null or camera_rig == null:
 		return
@@ -239,6 +265,7 @@ func _sync_interaction_from_camera():
 		return
 
 	update_hover_from_screen_position(get_viewport().get_mouse_position())
+	_sync_orbit_markers()
 	_sync_body_labels()
 
 func _sync_focus_lock_target():
