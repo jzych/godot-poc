@@ -75,8 +75,13 @@ TEST(MassiveBodyTest, DefaultSpacecraftConfiguration) {
     EXPECT_EQ(probe.id, "demo_probe");
     EXPECT_EQ(probe.name, "Demo Probe");
     EXPECT_EQ(probe.reference_body_index, 1);
-    EXPECT_DOUBLE_EQ(probe.orbit.semi_major_axis_km, 6771.0);
-    EXPECT_DOUBLE_EQ(probe.orbit.eccentricity, 0.0);
+    EXPECT_DOUBLE_EQ(probe.orbit.semi_major_axis_km, 8471.0);
+    EXPECT_NEAR(probe.orbit.eccentricity, 100.0 / 8471.0, 1e-12);
+    EXPECT_NEAR(
+        probe.orbit.semi_major_axis_km * (1.0 - probe.orbit.eccentricity),
+        8371.0,
+        1e-9);
+    EXPECT_DOUBLE_EQ(probe.orbit.apoapsis_km, 8571.0);
     EXPECT_NEAR(probe.orbit.inclination_rad, std::numbers::pi / 3.0, 1e-12);
     EXPECT_EQ(probe.orbit.central_body_index, 1);
     EXPECT_GT(probe.orbital_period_s, 0.0);

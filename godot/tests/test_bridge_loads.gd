@@ -176,9 +176,17 @@ func test_bridge_exposes_unified_focus_targets_with_spacecraft():
 	assert_eq(spacecraft_state["visual_shape"], "cube", "Default spacecraft should request a cube visual")
 	assert_almost_eq(spacecraft_state["visual_size_km"], 0.1, 0.000001, "Default spacecraft cube should be 100m per side")
 	assert_gt(spacecraft_state["radius_km"], 0.0, "Spacecraft should expose a framing radius")
-	assert_almost_eq(float(spacecraft_state["orbit"]["semi_major_axis_km"]), 6771.0, 0.001, "Default spacecraft should orbit at 400km above Earth")
+	var spacecraft_orbit: Dictionary = spacecraft_state["orbit"]
+	var spacecraft_periapsis_km: float = (
+		float(spacecraft_orbit["semi_major_axis_km"]) *
+		(1.0 - float(spacecraft_orbit["eccentricity"]))
+	)
+	assert_almost_eq(float(spacecraft_orbit["semi_major_axis_km"]), 8471.0, 0.001, "Default spacecraft should use the requested elliptical semi-major axis")
+	assert_almost_eq(float(spacecraft_orbit["eccentricity"]), 100.0 / 8471.0, 0.000001, "Default spacecraft should use the requested eccentricity")
+	assert_almost_eq(spacecraft_periapsis_km, 8371.0, 0.001, "Default spacecraft periapsis should be 2000km above Earth")
+	assert_almost_eq(float(spacecraft_orbit["apoapsis_km"]), 8571.0, 0.001, "Default spacecraft apoapsis should be 2200km above Earth")
 	assert_almost_eq(float(spacecraft_state["orbit"]["inclination_rad"]), deg_to_rad(60.0), 0.000001, "Default spacecraft should use a 60 degree inclination")
-	assert_gt(spacecraft_state["orbital_period_seconds"], 0.0, "Spacecraft should expose its LEO orbital period")
+	assert_gt(spacecraft_state["orbital_period_seconds"], 0.0, "Spacecraft should expose its elliptical orbital period")
 	assert_gt(spacecraft_state["preferred_max_distance_km"], spacecraft_state["preferred_min_distance_km"], "Spacecraft should expose ordered zoom bounds")
 	assert_true(spacecraft_state["simulation_position_km"].has("x"), "Spacecraft should expose high-precision position components")
 	assert_true(spacecraft_state["simulation_velocity_km_s"].has("x"), "Spacecraft should expose velocity components")

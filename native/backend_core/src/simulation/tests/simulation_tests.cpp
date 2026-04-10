@@ -365,11 +365,11 @@ TEST(SimulationTest, SpacecraftPositionFollowsReferenceBody) {
     EXPECT_NEAR(probe.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(probe.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(probe.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
-    EXPECT_NEAR(length(relative_position), 6771.0, KM_DISTANCE_TOLERANCE);
+    EXPECT_NEAR(length(relative_position), 8371.0, KM_DISTANCE_TOLERANCE);
     EXPECT_GT(length(subtract(probe.velocity_km_s, earth.velocity_km_s)), 0.0);
 }
 
-TEST(SimulationTest, SpacecraftLeoOrbitUsesSixtyDegreeInclination) {
+TEST(SimulationTest, SpacecraftOrbitUsesSixtyDegreeInclination) {
     solar::Simulation sim;
     sim.add_body(make_sun());
     sim.add_body(make_earth());
@@ -381,8 +381,8 @@ TEST(SimulationTest, SpacecraftLeoOrbitUsesSixtyDegreeInclination) {
     const auto relative_position =
         subtract(sim.spacecraft()[0].position_km, sim.bodies()[1].position_km);
 
-    EXPECT_GT(std::abs(relative_position.y), 5000.0)
-        << "A 60-degree LEO should rise well out of the ecliptic plane after a quarter orbit";
+    EXPECT_GT(std::abs(relative_position.y), 6000.0)
+        << "A 60-degree spacecraft orbit should rise well out of the ecliptic plane after a quarter orbit";
 }
 
 TEST(SimulationTest, ReferencePlaneOrbitUsesRealWorldProgradeDirection) {

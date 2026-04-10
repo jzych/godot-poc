@@ -105,8 +105,13 @@ MassiveBody make_moon() {
 
 Spacecraft make_demo_spacecraft() {
     constexpr double earth_radius_km = 6371.0;
-    constexpr double leo_altitude_km = 400.0;
-    constexpr double semi_major_axis_km = earth_radius_km + leo_altitude_km;
+    constexpr double periapsis_altitude_km = 2000.0;
+    constexpr double apoapsis_altitude_km = 2200.0;
+    constexpr double periapsis_km = earth_radius_km + periapsis_altitude_km;
+    constexpr double apoapsis_km = earth_radius_km + apoapsis_altitude_km;
+    constexpr double semi_major_axis_km = (periapsis_km + apoapsis_km) * 0.5;
+    constexpr double eccentricity =
+        (apoapsis_km - periapsis_km) / (apoapsis_km + periapsis_km);
     constexpr double earth_mu_km3_s2 = 398600.4418;
     constexpr double cube_side_km = 0.1;
     const double orbital_period_s =
@@ -122,11 +127,11 @@ Spacecraft make_demo_spacecraft() {
             {
                 .central_body_index = 1,
                 .semi_major_axis_km = semi_major_axis_km,
-                .eccentricity = 0.0,
+                .eccentricity = eccentricity,
                 .inclination_rad = deg_to_rad(60.0),
                 .longitude_of_ascending_node_rad = 0.0,
                 .argument_of_periapsis_rad = 0.0,
-                .apoapsis_km = semi_major_axis_km,
+                .apoapsis_km = apoapsis_km,
                 .anomaly_kind = OrbitalAnomalyKind::MeanAnomaly,
                 .anomaly_at_epoch = 0.0,
             },
