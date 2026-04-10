@@ -13,11 +13,17 @@ constexpr double deg_to_rad(double degrees) {
 MassiveBody make_sun() {
     return MassiveBody{
         .type = MassiveBodyType::Sun,
+        .focus_type = FocusTargetType::Star,
+        .id = "sun",
         .name = "Sun",
         .orbit = {},
         .rotation = {},
         .color = {1.0f, 0.65f, 0.0f},
+        .radius_km = 696000.0,
+        .preferred_min_distance_km = 1500000.0,
+        .preferred_max_distance_km = 7000000000.0,
         .position_km = {},
+        .velocity_km_s = {},
     };
 }
 
@@ -29,6 +35,8 @@ MassiveBody make_earth() {
 
     return MassiveBody{
         .type = MassiveBodyType::Earth,
+        .focus_type = FocusTargetType::Planet,
+        .id = "earth",
         .name = "Earth",
         .orbit =
             {
@@ -49,7 +57,11 @@ MassiveBody make_earth() {
                 .orbital_period_s = orbital_period_s,
             },
         .color = {0.2f, 0.4f, 1.0f},
+        .radius_km = 6371.0,
+        .preferred_min_distance_km = 15000.0,
+        .preferred_max_distance_km = 50000000.0,
         .position_km = {},
+        .velocity_km_s = {},
     };
 }
 
@@ -60,6 +72,8 @@ MassiveBody make_moon() {
 
     return MassiveBody{
         .type = MassiveBodyType::Moon,
+        .focus_type = FocusTargetType::Moon,
+        .id = "moon",
         .name = "Moon",
         .orbit =
             {
@@ -80,7 +94,27 @@ MassiveBody make_moon() {
                 .orbital_period_s = orbital_period_s,
             },
         .color = {0.8f, 0.8f, 0.8f},
+        .radius_km = 1737.0,
+        .preferred_min_distance_km = 4500.0,
+        .preferred_max_distance_km = 2500000.0,
         .position_km = {},
+        .velocity_km_s = {},
+    };
+}
+
+Spacecraft make_demo_spacecraft() {
+    return Spacecraft{
+        .id = "demo_probe",
+        .name = "Demo Probe",
+        .reference_body_index = 1,
+        .color = {0.95f, 0.95f, 0.75f},
+        .bounding_radius_km = 0.02,
+        .preferred_min_distance_km = 0.05,
+        .preferred_max_distance_km = 50000.0,
+        .relative_position_km = {.x = 12000.0, .y = 0.0, .z = 0.0},
+        .relative_velocity_km_s = {},
+        .position_km = {},
+        .velocity_km_s = {},
     };
 }
 
@@ -88,6 +122,10 @@ MassiveBody make_moon() {
 
 std::vector<MassiveBody> make_default_bodies() {
     return {make_sun(), make_earth(), make_moon()};
+}
+
+std::vector<Spacecraft> make_default_spacecraft() {
+    return {make_demo_spacecraft()};
 }
 
 } // namespace solar

@@ -28,6 +28,14 @@ Vec3 scale(const Vec3& vector, double scalar) {
     };
 }
 
+Vec3 subtract(const Vec3& lhs, const Vec3& rhs) {
+    return Vec3{
+        .x = lhs.x - rhs.x,
+        .y = lhs.y - rhs.y,
+        .z = lhs.z - rhs.z,
+    };
+}
+
 double dot(const Vec3& lhs, const Vec3& rhs) {
     return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
 }
@@ -216,6 +224,15 @@ Vec3 relative_orbit_position_km(const MassiveBody& body, double sim_time_s) {
         scale(tangential_direction, radius_km * std::sin(true_anomaly)));
 }
 
+Vec3 relative_orbit_velocity_km_s(const MassiveBody& body, double sim_time_s) {
+    constexpr double sample_dt_s = 1.0;
+    return scale(
+        subtract(
+            relative_orbit_position_km(body, sim_time_s + sample_dt_s),
+            relative_orbit_position_km(body, sim_time_s - sample_dt_s)),
+        0.5 / sample_dt_s);
+}
+
 } // namespace
 
 Simulation::Simulation() = default;
@@ -229,6 +246,10 @@ void Simulation::stop() { running_ = false; }
 
 void Simulation::add_body(MassiveBody body) {
     bodies_.push_back(std::move(body));
+}
+
+void Simulation::add_spacecraft(Spacecraft spacecraft) {
+    spacecraft_.push_back(std::move(spacecraft));
 }
 
 void Simulation::step(double delta_game_seconds) {
@@ -249,13 +270,43 @@ void Simulation::step(double delta_game_seconds) {
                 bodies_[static_cast<size_t>(body.orbit.central_body_index)].position_km;
         }
 
+        Vec3 parent_velocity{};
+        if (body.orbit.central_body_index >= 0 &&
+            body.orbit.central_body_index < static_cast<int>(bodies_.size())) {
+            parent_velocity =
+                bodies_[static_cast<size_t>(body.orbit.central_body_index)].velocity_km_s;
+        }
+
         body.position_km = add(parent_pos, relative_orbit_position_km(body, sim_time_s_));
+        body.velocity_km_s =
+            add(parent_velocity, relative_orbit_velocity_km_s(body, sim_time_s_));
+    }
+
+    for (auto& spacecraft : spacecraft_) {
+        Vec3 reference_position{};
+        Vec3 reference_velocity{};
+        if (spacecraft.reference_body_index >= 0 &&
+            spacecraft.reference_body_index < static_cast<int>(bodies_.size())) {
+            const auto& reference_body =
+                bodies_[static_cast<size_t>(spacecraft.reference_body_index)];
+            reference_position = reference_body.position_km;
+            reference_velocity = reference_body.velocity_km_s;
+        }
+
+        spacecraft.position_km =
+            add(reference_position, spacecraft.relative_position_km);
+        spacecraft.velocity_km_s =
+            add(reference_velocity, spacecraft.relative_velocity_km_s);
     }
 }
 
 const std::vector<MassiveBody>& Simulation::bodies() const { return bodies_; }
 
+const std::vector<Spacecraft>& Simulation::spacecraft() const { return spacecraft_; }
+
 size_t Simulation::body_count() const { return bodies_.size(); }
+
+size_t Simulation::spacecraft_count() const { return spacecraft_.size(); }
 
 double Simulation::sim_time() const { return sim_time_s_; }
 

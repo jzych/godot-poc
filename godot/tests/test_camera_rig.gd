@@ -220,11 +220,21 @@ func test_main_scene_wires_camera_rig():
 
 	assert_not_null(rig, "Main scene should instance the camera rig")
 	assert_not_null(scene.bridge, "Main scene should create the native bridge")
+	assert_not_null(scene.focus_controller, "Main scene should create the focus controller")
 	assert_eq(configured_focus, earth_pos_at_setup, "Camera rig should be configured from Earth's position at startup")
 
 	await _wait_frames(2)
 
 	assert_eq(scene.body_nodes.size(), scene.bridge.get_body_count(), "Scene should spawn views for all bridge bodies")
+	assert_eq(scene.spacecraft_nodes.size(), scene.bridge.get_spacecraft_count(), "Scene should spawn views for all bridge spacecraft")
+	assert_eq(scene.focus_target_nodes.size(), scene.bridge.get_focus_target_count(), "Scene should register all focusable views")
+	assert_eq(scene.focus_controller.get_target_count(), scene.bridge.get_focus_target_count(), "Focus controller should track every focusable target")
+	assert_true(scene.focus_controller.has_target_type("star"), "Focus controller should include the star target")
+	assert_true(scene.focus_controller.has_target_type("planet"), "Focus controller should include the planet target")
+	assert_true(scene.focus_controller.has_target_type("moon"), "Focus controller should include the moon target")
+	assert_true(scene.focus_controller.has_target_type("spacecraft"), "Focus controller should include the spacecraft target")
+	assert_not_null(scene.focus_controller.get_target_view("demo_probe"), "Focus controller should resolve the spacecraft view by stable id")
+	assert_almost_eq(scene.body_nodes[1].body_radius_km, float(scene.bridge.get_body_state(1)["radius_km"]), 0.001, "Body views should get radii from bridge metadata")
 	assert_eq(rig.focus_position, configured_focus, "Camera focus should remain stable after startup")
 	assert_gt(rig.current_distance, 0.0, "Camera rig should have a valid startup distance")
 

@@ -17,9 +17,14 @@ const EMISSION_STRENGTH := 0.45
 const AXIS_EPSILON := 0.000001
 
 var body_index: int = -1
+var focus_id: String = ""
+var focus_type: String = ""
 var body_label: String = ""
 var body_secondary_label: String = ""
 var body_radius: float = 1.0
+var body_radius_km: float = 1.0
+var preferred_min_distance_km: float = 1.0
+var preferred_max_distance_km: float = 1.0
 var orbit_state: Dictionary = {}
 var rotation_state: Dictionary = {}
 
@@ -45,9 +50,14 @@ func _ready():
 
 func configure(index: int, state: Dictionary, radius_units: float):
 	body_index = index
+	focus_id = str(state.get("id", str(index)))
+	focus_type = str(state.get("focus_type", "planet"))
 	body_label = str(state.get("name", "Body"))
 	body_secondary_label = _build_secondary_label(state)
 	body_radius = radius_units
+	body_radius_km = float(state.get("radius_km", 1.0))
+	preferred_min_distance_km = float(state.get("preferred_min_distance_km", 1.0))
+	preferred_max_distance_km = float(state.get("preferred_max_distance_km", 1.0))
 	orbit_state = state.get("orbit", {})
 	rotation_state = state.get("rotation", {})
 	_body_mesh_resource = _build_sphere_mesh(radius_units)

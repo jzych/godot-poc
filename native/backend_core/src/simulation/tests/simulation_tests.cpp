@@ -278,6 +278,16 @@ TEST(SimulationTest, AddBodies) {
     EXPECT_EQ(sim.body_count(), 2u);
 }
 
+TEST(SimulationTest, AddSpacecraft) {
+    solar::Simulation sim;
+    const auto spacecraft = solar::make_default_spacecraft();
+
+    sim.add_spacecraft(spacecraft[0]);
+
+    EXPECT_EQ(sim.spacecraft_count(), 1u);
+    EXPECT_EQ(sim.spacecraft()[0].id, "demo_probe");
+}
+
 TEST(SimulationTest, SunRemainsAtOrigin) {
     solar::Simulation sim;
     sim.add_body(make_sun());
@@ -321,6 +331,29 @@ TEST(SimulationTest, InitialOrbitPositionHonorsAnomalyAtEpoch) {
     EXPECT_NEAR(earth.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(earth.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(earth.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+    EXPECT_GT(length(earth.velocity_km_s), 0.0);
+}
+
+TEST(SimulationTest, SpacecraftPositionFollowsReferenceBody) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_earth());
+    const auto spacecraft = solar::make_default_spacecraft();
+    sim.add_spacecraft(spacecraft[0]);
+    sim.start();
+    sim.step(0.0);
+
+    const auto& earth = sim.bodies()[1];
+    const auto& probe = sim.spacecraft()[0];
+    const solar::Vec3 expected_position =
+        add(earth.position_km, spacecraft[0].relative_position_km);
+
+    EXPECT_NEAR(probe.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(probe.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(probe.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(probe.velocity_km_s.x, earth.velocity_km_s.x, 0.000001);
+    EXPECT_NEAR(probe.velocity_km_s.y, earth.velocity_km_s.y, 0.000001);
+    EXPECT_NEAR(probe.velocity_km_s.z, earth.velocity_km_s.z, 0.000001);
 }
 
 TEST(SimulationTest, ReferencePlaneOrbitUsesRealWorldProgradeDirection) {

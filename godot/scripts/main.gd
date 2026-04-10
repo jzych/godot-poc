@@ -5,21 +5,18 @@ const AU_TO_UNITS := 10000.0
 const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
 const BODY_VIEW_SCENE := preload("res://scenes/celestial_body_view.tscn")
 const ORBIT_LANE_SCRIPT := preload("res://scripts/orbit_lane_view.gd")
+const FOCUS_CONTROLLER_SCRIPT := preload("res://scripts/focus_controller.gd")
 const BODY_COLLISION_MASK := 1
 const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
 const HOVER_HIGHLIGHT_COLOR := Color.WHITE
 const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
 
-# Real radii in km
-const BODY_RADII := {
-	"Sun": 696000.0,
-	"Earth": 6371.0,
-	"Moon": 1737.0,
-}
-
 var bridge: SolarSystemBridge
+var focus_controller: FocusController
 var body_nodes: Array = []
+var spacecraft_nodes: Array = []
+var focus_target_nodes: Array = []
 var orbit_lane_nodes := {}
 var hovered_body_view = null
 var selected_body_view = null
@@ -38,8 +35,10 @@ var _interaction_sync_queued: bool = false
 func _ready():
 	bridge = SolarSystemBridge.new()
 	add_child(bridge)
+	focus_controller = FOCUS_CONTROLLER_SCRIPT.new()
 	await get_tree().process_frame
 	_spawn_bodies()
+	_spawn_spacecraft()
 	_spawn_orbit_lanes()
 	_setup_light()
 	_setup_camera()
@@ -47,12 +46,26 @@ func _ready():
 func _spawn_bodies():
 	for i in range(bridge.get_body_count()):
 		var state = bridge.get_body_state(i)
-		var radius_units: float = BODY_RADII.get(state["name"], 1000.0) * KM_TO_UNITS
-		var body_view = BODY_VIEW_SCENE.instantiate()
-		bodies_container.add_child(body_view)
-		body_view.configure(i, state, radius_units)
-		body_view.update_simulation_state(state, bridge.get_sim_time())
+		var body_view = _spawn_focus_target_view(i, state, bodies_container)
 		body_nodes.append(body_view)
+
+func _spawn_spacecraft():
+	var body_count: int = bridge.get_body_count()
+	for i in range(bridge.get_spacecraft_count()):
+		var state = bridge.get_spacecraft_state(i)
+		var spacecraft_view = _spawn_focus_target_view(body_count + i, state, bodies_container)
+		spacecraft_nodes.append(spacecraft_view)
+
+func _spawn_focus_target_view(focus_index: int, state: Dictionary, parent: Node):
+	var radius_units: float = float(state.get("radius_km", 1.0)) * KM_TO_UNITS
+	var target_view = BODY_VIEW_SCENE.instantiate()
+	parent.add_child(target_view)
+	target_view.configure(focus_index, state, radius_units)
+	target_view.position = state.get("position", Vector3.ZERO)
+	target_view.update_simulation_state(state, bridge.get_sim_time())
+	focus_target_nodes.append(target_view)
+	focus_controller.register_target(state, target_view)
+	return target_view
 
 func _spawn_orbit_lanes():
 	for body_view in body_nodes:
@@ -83,6 +96,13 @@ func _process(_delta):
 		var state = bridge.get_body_state(i)
 		body_nodes[i].position = state["position"]
 		body_nodes[i].update_simulation_state(state, sim_time_seconds)
+		focus_controller.update_target_state(state)
+
+	for i in range(spacecraft_nodes.size()):
+		var state = bridge.get_spacecraft_state(i)
+		spacecraft_nodes[i].position = state["position"]
+		spacecraft_nodes[i].update_simulation_state(state, sim_time_seconds)
+		focus_controller.update_target_state(state)
 
 	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
@@ -128,7 +148,8 @@ func _setup_camera():
 	if bridge == null or camera_rig == null:
 		return
 
-	var earth_pos: Vector3 = bridge.get_body_state(1)["position"]
+	var earth_view = focus_controller.get_target_view("earth") if focus_controller != null else null
+	var earth_pos: Vector3 = earth_view.global_position if earth_view != null else bridge.get_body_state(1)["position"]
 	var outward = earth_pos.normalized()
 	var camera_offset = outward * 3.0 + Vector3(0, 2.0, 0)
 	camera_rig.configure_from_offset(earth_pos, camera_offset)
@@ -185,7 +206,7 @@ func _resolve_body_view_from_hit(result: Dictionary):
 	return null
 
 func _refresh_highlights():
-	for body_view in body_nodes:
+	for body_view in focus_target_nodes:
 		if body_view == hovered_body_view:
 			body_view.set_highlight(true, HOVER_HIGHLIGHT_COLOR)
 		elif body_view == selected_body_view:
