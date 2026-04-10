@@ -368,6 +368,37 @@ func test_spaceship_button_selects_cube_spacecraft_target():
 	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship shortcut should target the spacecraft like a direct object click")
 	assert_eq(scene.selected_body_view, spacecraft, "Spaceship shortcut should select the spacecraft")
 
+func test_spaceship_visual_stays_readable_when_zoomed_out():
+	var scene := _spawn_main_scene()
+	await _wait_frames(2)
+
+	var spacecraft = scene.spacecraft_nodes[0]
+	var camera: Camera3D = scene.camera_rig.get_camera_node()
+	scene.camera_rig.focus_position = spacecraft.global_position
+	scene.camera_rig.current_distance = 1000.0
+	scene.camera_rig.target_distance = 1000.0
+	scene.camera_rig._apply_state()
+	scene._sync_spacecraft_readability()
+
+	var visible_side_units: float = spacecraft.visual_size_units * spacecraft.visual_readability_scale
+	var viewport_height: float = camera.get_viewport().get_visible_rect().size.y
+	var expected_min_units: float = (
+		2.0 * camera.global_position.distance_to(spacecraft.global_position) *
+		tan(deg_to_rad(camera.fov) * 0.5) *
+		scene.SPACECRAFT_MIN_SCREEN_PIXELS
+	) / viewport_height
+	var half_side_offset: Vector3 = camera.global_transform.basis.x.normalized() * visible_side_units * 0.5
+	var projected_left: Vector2 = camera.unproject_position(spacecraft.global_position - half_side_offset)
+	var projected_right: Vector2 = camera.unproject_position(spacecraft.global_position + half_side_offset)
+
+	assert_gt(spacecraft.visual_readability_scale, 1.0, "Zoomed-out spacecraft should get a visual-only readability scale")
+	assert_gte(visible_side_units, expected_min_units * 0.999, "Readability scale should preserve a minimum world size for the active camera")
+	assert_gte(
+		projected_left.distance_to(projected_right),
+		scene.SPACECRAFT_MIN_SCREEN_PIXELS * 0.99,
+		"Zoomed-out spacecraft should remain clearly visible on screen"
+	)
+
 func test_spaceship_button_double_click_locks_spacecraft_view():
 	var scene := _spawn_main_scene()
 	await _wait_frames(2)
