@@ -1,7 +1,7 @@
 extends Node3D
 class_name CosmosCameraRig
 
-const FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER := 3.0
+const MIN_FOV_TANGENT := 0.000001
 
 @export var rotation_sensitivity := 0.2
 @export var pitch_min_deg := -80.0
@@ -9,6 +9,7 @@ const FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER := 3.0
 @export var min_distance := 0.000001
 @export var max_distance := 500000.0
 @export var fixed_fov_degrees := 75.0
+@export var max_focus_diameter_view_fraction := 2.0 / 3.0
 @export var zoom_step_ratio := 0.15
 @export var zoom_smoothing_speed := 8.0
 @export var pan_speed_base := 6.0
@@ -253,6 +254,8 @@ func start_focus_lock(target_focus_position: Vector3, body_radius: float):
 	focus_lock_target_position = target_focus_position
 	target_distance = get_focus_lock_distance_for_radius(body_radius)
 	current_focus_radius = body_radius
+	current_focus_min_distance = target_distance
+	current_focus_max_distance = max(current_focus_min_distance, max_distance)
 	_focus_lock_transition_offset = focus_position - target_focus_position
 	_focus_lock_transition_active = (
 		_focus_lock_transition_offset.length_squared() > pow(focus_lock_snap_distance, 2)
@@ -309,8 +312,15 @@ func is_focus_lock_active() -> bool:
 	return _focus_lock_active
 
 func get_focus_lock_distance_for_radius(body_radius: float) -> float:
+	var safe_radius: float = max(body_radius, 0.0)
+	if safe_radius <= 0.0:
+		return min_distance
+
+	var safe_view_fraction: float = clamp(max_focus_diameter_view_fraction, 0.01, 0.95)
+	var fov_tangent: float = max(tan(deg_to_rad(fixed_fov_degrees) * 0.5), MIN_FOV_TANGENT)
+	var framing_distance: float = safe_radius / (safe_view_fraction * fov_tangent)
 	return clamp(
-		max(body_radius * FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER, min_distance),
+		max(framing_distance, min_distance),
 		min_distance,
 		max_distance
 	)
@@ -336,7 +346,7 @@ func _apply_focus_target_state(target_state: Dictionary, preserve_zoom_scalar: b
 	var preferred_max: float = float(target_state.get("preferred_max_distance", max_distance))
 	var radius_distance: float = get_focus_lock_distance_for_radius(current_focus_radius)
 	current_focus_min_distance = clamp(
-		max(preferred_min, min_distance),
+		max(preferred_min, radius_distance, min_distance),
 		min_distance,
 		max_distance
 	)
@@ -345,8 +355,6 @@ func _apply_focus_target_state(target_state: Dictionary, preserve_zoom_scalar: b
 		current_focus_min_distance,
 		max_distance
 	)
-	if radius_distance > current_focus_max_distance:
-		current_focus_max_distance = clamp(radius_distance, current_focus_min_distance, max_distance)
 
 	if preserve_zoom_scalar:
 		target_distance = _zoom_scalar_to_distance(
@@ -383,10 +391,13 @@ func _zoom_scalar_to_distance(zoom_scalar: float, min_bound: float, max_bound: f
 	)
 
 func _get_active_min_distance() -> float:
-	return current_focus_min_distance if not current_focus_id.is_empty() else min_distance
+	return current_focus_min_distance if _has_active_focus_bounds() else min_distance
 
 func _get_active_max_distance() -> float:
-	return current_focus_max_distance if not current_focus_id.is_empty() else max_distance
+	return current_focus_max_distance if _has_active_focus_bounds() else max_distance
+
+func _has_active_focus_bounds() -> bool:
+	return not current_focus_id.is_empty() or _focus_lock_active
 
 func _ensure_input_actions():
 	_ensure_action(&"camera_rotate_hold", [_make_mouse_button_event(2)])

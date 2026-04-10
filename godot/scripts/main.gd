@@ -11,7 +11,6 @@ const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
 const HOVER_HIGHLIGHT_COLOR := Color.WHITE
 const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
-const SPACECRAFT_MIN_SCREEN_PIXELS := 28.0
 
 var bridge: SolarSystemBridge
 var focus_controller: FocusController
@@ -46,7 +45,6 @@ func _ready():
 	_setup_light()
 	_setup_camera()
 	_setup_spaceship_button()
-	_sync_spacecraft_readability()
 
 func _spawn_bodies():
 	for i in range(bridge.get_body_count()):
@@ -112,7 +110,6 @@ func _process(_delta):
 
 	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
-	_sync_spacecraft_readability()
 	_queue_interaction_sync()
 
 func _input(event):
@@ -346,7 +343,7 @@ func _build_camera_focus_state(body_view) -> Dictionary:
 	return {
 		"id": body_view.focus_id,
 		"focus_type": body_view.focus_type,
-		"framing_radius": body_view.body_radius,
+		"framing_radius": body_view.get_camera_framing_radius(),
 		"preferred_min_distance": body_view.preferred_min_distance_units,
 		"preferred_max_distance": body_view.preferred_max_distance_units,
 	}
@@ -364,7 +361,6 @@ func _sync_interaction_from_camera():
 	if bridge == null or body_nodes.is_empty():
 		return
 
-	_sync_spacecraft_readability()
 	update_hover_from_screen_position(get_viewport().get_mouse_position())
 	_sync_orbit_markers()
 	_sync_body_labels()
@@ -378,11 +374,3 @@ func _sync_focus_lock_target():
 		return
 
 	camera_rig.update_focus_lock_target(locked_body_view.global_position)
-
-func _sync_spacecraft_readability():
-	if camera_rig == null:
-		return
-
-	var camera: Camera3D = camera_rig.get_camera_node()
-	for spacecraft_view in spacecraft_nodes:
-		spacecraft_view.update_readability_scale(camera, SPACECRAFT_MIN_SCREEN_PIXELS)

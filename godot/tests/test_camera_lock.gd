@@ -62,9 +62,15 @@ func test_start_focus_lock_sets_radius_based_distance_without_changing_angles():
 	var initial_pitch: float = rig.pitch_degrees_value
 
 	rig.start_focus_lock(Vector3(20.0, 5.0, 20.0), 2.0)
+	var expected_distance: float = rig.get_focus_lock_distance_for_radius(2.0)
 
 	assert_true(rig.is_focus_lock_active(), "Starting a focus lock should enable lock mode")
-	assert_eq(rig.target_distance, 6.0, "Lock distance should default to three times the body radius")
+	assert_almost_eq(
+		rig.target_distance,
+		expected_distance,
+		0.000001,
+		"Lock distance should frame the body from its radius and fixed FOV"
+	)
 	assert_eq(rig.yaw_degrees_value, initial_yaw, "Focus lock should preserve yaw")
 	assert_eq(rig.pitch_degrees_value, initial_pitch, "Focus lock should preserve pitch")
 

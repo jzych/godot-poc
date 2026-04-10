@@ -15,7 +15,6 @@ const PRIME_MERIDIAN_SOFTNESS := 0.015
 const PRIME_MERIDIAN_DARKEN_FACTOR := 0.35
 const EMISSION_STRENGTH := 0.45
 const AXIS_EPSILON := 0.000001
-const MIN_VIEWPORT_EXTENT := 1.0
 
 var body_index: int = -1
 var focus_id: String = ""
@@ -31,7 +30,6 @@ var preferred_min_distance_km: float = 1.0
 var preferred_max_distance_km: float = 1.0
 var preferred_min_distance_units: float = 1.0
 var preferred_max_distance_units: float = 1.0
-var visual_readability_scale: float = 1.0
 var orbit_state: Dictionary = {}
 var rotation_state: Dictionary = {}
 
@@ -97,29 +95,13 @@ func update_simulation_state(state: Dictionary, sim_time_seconds: float):
 	_refresh_rotation_model()
 	_apply_visual_rotation(sim_time_seconds)
 
-func update_readability_scale(camera: Camera3D, min_screen_pixels: float) -> float:
-	if not is_node_ready() or visual_shape != "cube":
-		_set_visual_readability_scale(1.0)
-		return visual_readability_scale
-	if camera == null or min_screen_pixels <= 0.0 or visual_size_units <= 0.0:
-		_set_visual_readability_scale(1.0)
-		return visual_readability_scale
-
-	var viewport_height: float = max(
-		float(camera.get_viewport().get_visible_rect().size.y),
-		MIN_VIEWPORT_EXTENT
-	)
-	var distance_to_camera: float = max(camera.global_position.distance_to(global_position), 0.000001)
-	var vertical_fov_rad: float = deg_to_rad(camera.fov)
-	var world_units_per_pixel: float = (
-		2.0 * distance_to_camera * tan(vertical_fov_rad * 0.5)
-	) / viewport_height
-	var desired_size_units: float = world_units_per_pixel * min_screen_pixels
-	_set_visual_readability_scale(max(1.0, desired_size_units / visual_size_units))
-	return visual_readability_scale
-
 func get_visual_basis() -> Basis:
 	return body_visual_root.basis
+
+func get_camera_framing_radius() -> float:
+	if visual_shape == "cube" and visual_size_units > 0.0:
+		return visual_size_units * 0.5
+	return body_radius
 
 func get_orbit_normal() -> Vector3:
 	return _orbit_normal
@@ -240,18 +222,6 @@ func _apply_visual_rotation(sim_time_seconds: float):
 	var rotation_speed: float = float(rotation_state.get("rotation_speed_rad_per_s", 0.0))
 	var spin_basis := Basis(Vector3.UP, rotation_speed * sim_time_seconds)
 	body_visual_root.basis = (_base_visual_basis * spin_basis).orthonormalized()
-	_apply_visual_readability_scale()
-
-func _set_visual_readability_scale(new_scale: float):
-	visual_readability_scale = max(new_scale, 1.0)
-	_apply_visual_readability_scale()
-
-func _apply_visual_readability_scale():
-	if not is_node_ready():
-		return
-
-	var scale_vector := Vector3.ONE * visual_readability_scale
-	body_visual_root.scale = scale_vector
 
 func _compute_orbit_normal() -> Vector3:
 	var inclination: float = float(orbit_state.get("inclination_rad", 0.0))

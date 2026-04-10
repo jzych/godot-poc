@@ -134,7 +134,7 @@ Spacecraft make_demo_spacecraft() {
         .orbital_period_s = orbital_period_s,
         .bounding_radius_km = std::sqrt(3.0) * cube_side_km * 0.5,
         .visual_size_km = cube_side_km,
-        .preferred_min_distance_km = 0.25,
+        .preferred_min_distance_km = 0.01,
         .preferred_max_distance_km = 50000.0,
         .relative_position_km = {},
         .relative_velocity_km_s = {},

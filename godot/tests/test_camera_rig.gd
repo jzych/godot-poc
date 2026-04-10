@@ -202,6 +202,50 @@ func test_focus_target_zoom_bounds_reinterpret_current_zoom_scale():
 	assert_gte(rig.target_distance, rig.current_focus_min_distance, "Spacecraft target distance should respect target min bounds")
 	assert_lte(rig.target_distance, rig.current_focus_max_distance, "Spacecraft target distance should respect target max bounds")
 
+func test_focus_target_zoom_floor_uses_target_size_and_fixed_fov():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	var framing_radius := 10.0
+	rig.configure_from_focus_target(
+		Vector3.ZERO,
+		Vector3(0.0, 0.0, 100.0),
+		{
+			"id": "planet",
+			"focus_type": "planet",
+			"framing_radius": framing_radius,
+			"preferred_min_distance": 0.001,
+			"preferred_max_distance": 1000.0,
+		}
+	)
+	var expected_min_distance: float = rig.get_focus_lock_distance_for_radius(framing_radius)
+	var diameter_view_fraction: float = (
+		framing_radius /
+		(expected_min_distance * tan(deg_to_rad(rig.fixed_fov_degrees) * 0.5))
+	)
+
+	assert_almost_eq(
+		rig.current_focus_min_distance,
+		expected_min_distance,
+		0.000001,
+		"Focus min distance should be derived from target size and fixed FOV"
+	)
+	assert_lte(
+		diameter_view_fraction,
+		rig.max_focus_diameter_view_fraction + 0.000001,
+		"Focused target diameter should not exceed the configured screen-height fraction"
+	)
+
+	for _i in range(60):
+		rig.apply_zoom_step(-1.0)
+
+	assert_almost_eq(
+		rig.target_distance,
+		rig.current_focus_min_distance,
+		0.000001,
+		"Max zoom-in should stop at the target-size floor"
+	)
+
 func test_keyboard_pan_moves_focus_on_fixed_plane():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
 	await _wait_frames(1)
@@ -368,35 +412,47 @@ func test_spaceship_button_selects_cube_spacecraft_target():
 	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship shortcut should target the spacecraft like a direct object click")
 	assert_eq(scene.selected_body_view, spacecraft, "Spaceship shortcut should select the spacecraft")
 
-func test_spaceship_visual_stays_readable_when_zoomed_out():
+func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 	var scene := _spawn_main_scene()
 	await _wait_frames(2)
 
 	var spacecraft = scene.spacecraft_nodes[0]
-	var camera: Camera3D = scene.camera_rig.get_camera_node()
-	scene.camera_rig.focus_position = spacecraft.global_position
-	scene.camera_rig.current_distance = 1000.0
-	scene.camera_rig.target_distance = 1000.0
-	scene.camera_rig._apply_state()
-	scene._sync_spacecraft_readability()
+	var rig: CosmosCameraRig = scene.camera_rig
+	scene._start_focus_lock(spacecraft)
 
-	var visible_side_units: float = spacecraft.visual_size_units * spacecraft.visual_readability_scale
-	var viewport_height: float = camera.get_viewport().get_visible_rect().size.y
-	var expected_min_units: float = (
-		2.0 * camera.global_position.distance_to(spacecraft.global_position) *
-		tan(deg_to_rad(camera.fov) * 0.5) *
-		scene.SPACECRAFT_MIN_SCREEN_PIXELS
-	) / viewport_height
-	var half_side_offset: Vector3 = camera.global_transform.basis.x.normalized() * visible_side_units * 0.5
-	var projected_left: Vector2 = camera.unproject_position(spacecraft.global_position - half_side_offset)
-	var projected_right: Vector2 = camera.unproject_position(spacecraft.global_position + half_side_offset)
+	for _i in range(80):
+		rig.apply_zoom_step(-1.0)
 
-	assert_gt(spacecraft.visual_readability_scale, 1.0, "Zoomed-out spacecraft should get a visual-only readability scale")
-	assert_gte(visible_side_units, expected_min_units * 0.999, "Readability scale should preserve a minimum world size for the active camera")
+	var expected_min_distance: float = rig.get_focus_lock_distance_for_radius(
+		spacecraft.get_camera_framing_radius()
+	)
+	var side_view_fraction: float = (
+		spacecraft.visual_size_units /
+		(2.0 * rig.target_distance * tan(deg_to_rad(rig.fixed_fov_degrees) * 0.5))
+	)
+
+	assert_eq(spacecraft.body_visual_root.scale, Vector3.ONE, "Spacecraft mesh should keep its real render scale")
+	assert_almost_eq(
+		rig.current_focus_min_distance,
+		expected_min_distance,
+		0.000001,
+		"Spacecraft max zoom-in should be derived from its visual size metadata"
+	)
+	assert_almost_eq(
+		rig.target_distance,
+		rig.current_focus_min_distance,
+		0.000001,
+		"Spacecraft zoom-in should stop at the size-derived camera floor"
+	)
 	assert_gte(
-		projected_left.distance_to(projected_right),
-		scene.SPACECRAFT_MIN_SCREEN_PIXELS * 0.99,
-		"Zoomed-out spacecraft should remain clearly visible on screen"
+		side_view_fraction,
+		0.5,
+		"Spacecraft should be clearly framed at max zoom-in without resizing"
+	)
+	assert_lte(
+		side_view_fraction,
+		rig.max_focus_diameter_view_fraction + 0.000001,
+		"Spacecraft side should not exceed the configured max screen-height fraction"
 	)
 
 func test_spaceship_button_double_click_locks_spacecraft_view():
