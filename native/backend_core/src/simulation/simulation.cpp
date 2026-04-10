@@ -293,10 +293,21 @@ void Simulation::step(double delta_game_seconds) {
             reference_velocity = reference_body.velocity_km_s;
         }
 
-        spacecraft.position_km =
-            add(reference_position, spacecraft.relative_position_km);
-        spacecraft.velocity_km_s =
-            add(reference_velocity, spacecraft.relative_velocity_km_s);
+        Vec3 relative_position = spacecraft.relative_position_km;
+        Vec3 relative_velocity = spacecraft.relative_velocity_km_s;
+        if (spacecraft.orbital_period_s > 0.0 &&
+            spacecraft.orbit.semi_major_axis_km > 0.0) {
+            MassiveBody orbiting_spacecraft{};
+            orbiting_spacecraft.orbit = spacecraft.orbit;
+            orbiting_spacecraft.rotation.orbital_period_s = spacecraft.orbital_period_s;
+            relative_position =
+                relative_orbit_position_km(orbiting_spacecraft, sim_time_s_);
+            relative_velocity =
+                relative_orbit_velocity_km_s(orbiting_spacecraft, sim_time_s_);
+        }
+
+        spacecraft.position_km = add(reference_position, relative_position);
+        spacecraft.velocity_km_s = add(reference_velocity, relative_velocity);
     }
 }
 

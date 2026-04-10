@@ -256,11 +256,24 @@ solar::Vec3 expected_relative_position(
         scale(tangential_direction, radius_km * std::sin(true_anomaly)));
 }
 
+solar::Vec3 expected_relative_position(
+    const solar::Spacecraft& spacecraft,
+    double sim_time_seconds = 0.0) {
+    solar::MassiveBody orbiting_body{};
+    orbiting_body.orbit = spacecraft.orbit;
+    orbiting_body.rotation.orbital_period_s = spacecraft.orbital_period_s;
+    return expected_relative_position(orbiting_body, sim_time_seconds);
+}
+
 } // namespace
 
 TEST(SimulationTest, CanInstantiate) {
     solar::Simulation sim;
     EXPECT_FALSE(sim.is_running());
+}
+
+TEST(SimulationTest, TimeScaleRunsAtHalfPreviousPrototypeRate) {
+    EXPECT_DOUBLE_EQ(solar::Simulation::TIME_SCALE, 1080.0);
 }
 
 TEST(SimulationTest, StartStop) {
@@ -346,14 +359,30 @@ TEST(SimulationTest, SpacecraftPositionFollowsReferenceBody) {
     const auto& earth = sim.bodies()[1];
     const auto& probe = sim.spacecraft()[0];
     const solar::Vec3 expected_position =
-        add(earth.position_km, spacecraft[0].relative_position_km);
+        add(earth.position_km, expected_relative_position(probe));
+    const solar::Vec3 relative_position = subtract(probe.position_km, earth.position_km);
 
     EXPECT_NEAR(probe.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(probe.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(probe.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
-    EXPECT_NEAR(probe.velocity_km_s.x, earth.velocity_km_s.x, 0.000001);
-    EXPECT_NEAR(probe.velocity_km_s.y, earth.velocity_km_s.y, 0.000001);
-    EXPECT_NEAR(probe.velocity_km_s.z, earth.velocity_km_s.z, 0.000001);
+    EXPECT_NEAR(length(relative_position), 6771.0, KM_DISTANCE_TOLERANCE);
+    EXPECT_GT(length(subtract(probe.velocity_km_s, earth.velocity_km_s)), 0.0);
+}
+
+TEST(SimulationTest, SpacecraftLeoOrbitUsesSixtyDegreeInclination) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_earth());
+    const auto spacecraft = solar::make_default_spacecraft();
+    sim.add_spacecraft(spacecraft[0]);
+    sim.start();
+    sim.step(spacecraft[0].orbital_period_s / (4.0 * solar::Simulation::TIME_SCALE));
+
+    const auto relative_position =
+        subtract(sim.spacecraft()[0].position_km, sim.bodies()[1].position_km);
+
+    EXPECT_GT(std::abs(relative_position.y), 5000.0)
+        << "A 60-degree LEO should rise well out of the ecliptic plane after a quarter orbit";
 }
 
 TEST(SimulationTest, ReferencePlaneOrbitUsesRealWorldProgradeDirection) {

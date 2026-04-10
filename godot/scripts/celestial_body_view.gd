@@ -23,6 +23,9 @@ var body_label: String = ""
 var body_secondary_label: String = ""
 var body_radius: float = 1.0
 var body_radius_km: float = 1.0
+var visual_shape: String = "sphere"
+var visual_size_km: float = 2.0
+var visual_size_units: float = 2.0
 var preferred_min_distance_km: float = 1.0
 var preferred_max_distance_km: float = 1.0
 var orbit_state: Dictionary = {}
@@ -56,11 +59,16 @@ func configure(index: int, state: Dictionary, radius_units: float):
 	body_secondary_label = _build_secondary_label(state)
 	body_radius = radius_units
 	body_radius_km = float(state.get("radius_km", 1.0))
+	visual_shape = str(state.get("visual_shape", "sphere"))
+	visual_size_km = float(state.get("visual_size_km", body_radius_km * 2.0))
+	visual_size_units = visual_size_km * float(state.get("km_to_units", 0.0))
+	if visual_size_units <= 0.0:
+		visual_size_units = radius_units * 2.0
 	preferred_min_distance_km = float(state.get("preferred_min_distance_km", 1.0))
 	preferred_max_distance_km = float(state.get("preferred_max_distance_km", 1.0))
 	orbit_state = state.get("orbit", {})
 	rotation_state = state.get("rotation", {})
-	_body_mesh_resource = _build_sphere_mesh(radius_units)
+	_body_mesh_resource = _build_body_mesh(radius_units)
 	_base_color = state.get("color", Color.WHITE)
 	name = body_label
 	_refresh_rotation_model()
@@ -136,9 +144,7 @@ func _refresh_visuals():
 	outline_mesh.material_override = _outline_material
 	_apply_highlight_state()
 
-	var sphere_shape := SphereShape3D.new()
-	sphere_shape.radius = body_radius
-	collision_shape.shape = sphere_shape
+	collision_shape.shape = _build_collision_shape()
 
 	hit_body.collision_layer = BODY_COLLISION_LAYER
 	hit_body.collision_mask = 0
@@ -151,6 +157,24 @@ func _build_sphere_mesh(radius_units: float) -> SphereMesh:
 	sphere.radius = radius_units
 	sphere.height = radius_units * 2.0
 	return sphere
+
+func _build_body_mesh(radius_units: float) -> Mesh:
+	if visual_shape == "cube":
+		var cube := BoxMesh.new()
+		cube.size = Vector3.ONE * visual_size_units
+		return cube
+
+	return _build_sphere_mesh(radius_units)
+
+func _build_collision_shape() -> Shape3D:
+	if visual_shape == "cube":
+		var box_shape := BoxShape3D.new()
+		box_shape.size = Vector3.ONE * visual_size_units
+		return box_shape
+
+	var sphere_shape := SphereShape3D.new()
+	sphere_shape.radius = body_radius
+	return sphere_shape
 
 func _build_secondary_label(state: Dictionary) -> String:
 	var parts: Array[String] = []

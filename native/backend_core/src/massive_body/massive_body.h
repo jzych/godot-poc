@@ -73,8 +73,11 @@ struct Spacecraft {
     std::string id;
     std::string name;
     int reference_body_index = -1;
+    OrbitParameters orbit;
     Color3 color;
+    double orbital_period_s = 0.0;
     double bounding_radius_km = 0.01;
+    double visual_size_km = 0.02;
     double preferred_min_distance_km = 0.05;
     double preferred_max_distance_km = 100000.0;
     Vec3 relative_position_km;

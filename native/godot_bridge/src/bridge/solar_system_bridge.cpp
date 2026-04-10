@@ -78,6 +78,22 @@ godot::Dictionary make_focus_metadata(
     return state;
 }
 
+godot::Dictionary orbit_to_dictionary(const OrbitParameters& orbit) {
+    godot::Dictionary orbit_state;
+    orbit_state["central_body_index"] = orbit.central_body_index;
+    orbit_state["semi_major_axis_km"] = orbit.semi_major_axis_km;
+    orbit_state["eccentricity"] = orbit.eccentricity;
+    orbit_state["inclination_rad"] = orbit.inclination_rad;
+    orbit_state["longitude_of_ascending_node_rad"] =
+        orbit.longitude_of_ascending_node_rad;
+    orbit_state["argument_of_periapsis_rad"] =
+        orbit.argument_of_periapsis_rad;
+    orbit_state["apoapsis_km"] = orbit.apoapsis_km;
+    orbit_state["anomaly_kind"] = godot::String(anomaly_kind_name(orbit.anomaly_kind));
+    orbit_state["anomaly_at_epoch"] = orbit.anomaly_at_epoch;
+    return orbit_state;
+}
+
 } // namespace
 
 SolarSystemBridge::SolarSystemBridge() = default;
@@ -154,18 +170,7 @@ godot::Dictionary SolarSystemBridge::get_body_state(int index) const {
         body.position_km,
         body.velocity_km_s,
         scale);
-    godot::Dictionary orbit_state;
-    orbit_state["central_body_index"] = body.orbit.central_body_index;
-    orbit_state["semi_major_axis_km"] = body.orbit.semi_major_axis_km;
-    orbit_state["eccentricity"] = body.orbit.eccentricity;
-    orbit_state["inclination_rad"] = body.orbit.inclination_rad;
-    orbit_state["longitude_of_ascending_node_rad"] =
-        body.orbit.longitude_of_ascending_node_rad;
-    orbit_state["argument_of_periapsis_rad"] =
-        body.orbit.argument_of_periapsis_rad;
-    orbit_state["apoapsis_km"] = body.orbit.apoapsis_km;
-    orbit_state["anomaly_kind"] = godot::String(anomaly_kind_name(body.orbit.anomaly_kind));
-    orbit_state["anomaly_at_epoch"] = body.orbit.anomaly_at_epoch;
+    godot::Dictionary orbit_state = orbit_to_dictionary(body.orbit);
 
     godot::Dictionary rotation_state;
     rotation_state["rotation_speed_rad_per_s"] = body.rotation.rotation_speed_rad_per_s;
@@ -177,6 +182,8 @@ godot::Dictionary SolarSystemBridge::get_body_state(int index) const {
     state["color"] = godot::Color(body.color.r, body.color.g, body.color.b);
     state["source_kind"] = godot::String("body");
     state["body_index"] = index;
+    state["visual_shape"] = godot::String("sphere");
+    state["visual_size_km"] = body.radius_km * 2.0;
     state["render_domain_hint"] =
         godot::String(body.focus_type == FocusTargetType::Star ? "far" : "mid");
     state["central_body_name"] = godot::String(central_body_name.c_str());
@@ -216,23 +223,28 @@ godot::Dictionary SolarSystemBridge::get_spacecraft_state(int index) const {
             sim_.bodies()[static_cast<size_t>(spacecraft.reference_body_index)].name;
     }
 
-    godot::Dictionary empty_orbit_state;
-    empty_orbit_state["central_body_index"] = spacecraft.reference_body_index;
+    const std::string orbital_period_text =
+        spacecraft.orbital_period_s > 0.0
+            ? solar::format_duration_ydhms(spacecraft.orbital_period_s)
+            : "";
+    godot::Dictionary orbit_state = orbit_to_dictionary(spacecraft.orbit);
     godot::Dictionary empty_rotation_state;
     empty_rotation_state["rotation_speed_rad_per_s"] = 0.0;
     empty_rotation_state["axial_tilt_to_orbit_rad"] = 0.0;
-    empty_rotation_state["orbital_period_seconds"] = 0.0;
+    empty_rotation_state["orbital_period_seconds"] = spacecraft.orbital_period_s;
 
     state["name"] = godot::String(spacecraft.name.c_str());
     state["color"] = godot::Color(spacecraft.color.r, spacecraft.color.g, spacecraft.color.b);
     state["source_kind"] = godot::String("spacecraft");
     state["spacecraft_index"] = index;
     state["reference_body_index"] = spacecraft.reference_body_index;
+    state["visual_shape"] = godot::String("cube");
+    state["visual_size_km"] = spacecraft.visual_size_km;
     state["render_domain_hint"] = godot::String("near");
     state["central_body_name"] = godot::String(reference_body_name.c_str());
-    state["orbital_period_seconds"] = 0.0;
-    state["orbital_period_ydhms"] = godot::String("");
-    state["orbit"] = empty_orbit_state;
+    state["orbital_period_seconds"] = spacecraft.orbital_period_s;
+    state["orbital_period_ydhms"] = godot::String(orbital_period_text.c_str());
+    state["orbit"] = orbit_state;
     state["rotation"] = empty_rotation_state;
 
     return state;

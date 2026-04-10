@@ -2,6 +2,9 @@ extends GutTest
 
 const CAMERA_RIG_SCENE := preload("res://scenes/cosmos_camera_rig.tscn")
 const MAIN_SCENE := preload("res://scenes/main.tscn")
+const KM_PER_AU := 149597870.7
+const AU_TO_UNITS := 10000.0
+const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
 
 func _spawn_camera_rig() -> CosmosCameraRig:
 	var rig: CosmosCameraRig = CAMERA_RIG_SCENE.instantiate()
@@ -272,3 +275,23 @@ func test_main_scene_wires_camera_rig():
 		0.0,
 		"Main scene drag pan vertical motion should move opposite the camera-forward direction"
 	)
+
+func test_spaceship_button_selects_cube_spacecraft_target():
+	var scene := _spawn_main_scene()
+	await _wait_frames(2)
+
+	var spacecraft = scene.spacecraft_nodes[0]
+	var cube_mesh = spacecraft.body_mesh.mesh
+
+	assert_eq(scene.spaceship_button.text, "SPACESHIP", "Spaceship shortcut should be labelled clearly")
+	assert_eq(scene.spaceship_button.anchor_left, 1.0, "Spaceship shortcut should anchor to the top-right corner")
+	assert_eq(scene.spaceship_button.anchor_right, 1.0, "Spaceship shortcut should anchor to the top-right corner")
+	assert_true(spacecraft.body_mesh.mesh is BoxMesh, "Spacecraft should render as a cube")
+	assert_almost_eq(cube_mesh.size.x, 0.1 * KM_TO_UNITS, 0.000001, "Spacecraft cube should be 100m wide")
+	assert_almost_eq(cube_mesh.size.y, 0.1 * KM_TO_UNITS, 0.000001, "Spacecraft cube should be 100m tall")
+	assert_almost_eq(cube_mesh.size.z, 0.1 * KM_TO_UNITS, 0.000001, "Spacecraft cube should be 100m deep")
+
+	scene.spaceship_button.emit_signal("pressed")
+
+	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship shortcut should target the spacecraft like a direct object click")
+	assert_eq(scene.selected_body_view, spacecraft, "Spaceship shortcut should select the spacecraft")

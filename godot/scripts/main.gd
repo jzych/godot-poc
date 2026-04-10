@@ -21,6 +21,8 @@ var orbit_lane_nodes := {}
 var hovered_body_view = null
 var selected_body_view = null
 var locked_body_view = null
+var spaceship_button_layer: CanvasLayer = null
+var spaceship_button: Button = null
 var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
@@ -42,6 +44,7 @@ func _ready():
 	_spawn_orbit_lanes()
 	_setup_light()
 	_setup_camera()
+	_setup_spaceship_button()
 
 func _spawn_bodies():
 	for i in range(bridge.get_body_count()):
@@ -57,6 +60,7 @@ func _spawn_spacecraft():
 		spacecraft_nodes.append(spacecraft_view)
 
 func _spawn_focus_target_view(focus_index: int, state: Dictionary, parent: Node):
+	state["km_to_units"] = KM_TO_UNITS
 	var radius_units: float = float(state.get("radius_km", 1.0)) * KM_TO_UNITS
 	var target_view = BODY_VIEW_SCENE.instantiate()
 	parent.add_child(target_view)
@@ -153,6 +157,43 @@ func _setup_camera():
 	var outward = earth_pos.normalized()
 	var camera_offset = outward * 3.0 + Vector3(0, 2.0, 0)
 	camera_rig.configure_from_offset(earth_pos, camera_offset)
+
+func _setup_spaceship_button():
+	if spaceship_button_layer != null:
+		return
+
+	spaceship_button_layer = CanvasLayer.new()
+	spaceship_button_layer.name = "SpaceshipButtonLayer"
+	add_child(spaceship_button_layer)
+
+	spaceship_button = Button.new()
+	spaceship_button.name = "SpaceshipButton"
+	spaceship_button.text = "SPACESHIP"
+	spaceship_button.focus_mode = Control.FOCUS_NONE
+	spaceship_button.custom_minimum_size = Vector2(136.0, 36.0)
+	spaceship_button.anchor_left = 1.0
+	spaceship_button.anchor_right = 1.0
+	spaceship_button.anchor_top = 0.0
+	spaceship_button.anchor_bottom = 0.0
+	spaceship_button.offset_left = -148.0
+	spaceship_button.offset_right = -12.0
+	spaceship_button.offset_top = 12.0
+	spaceship_button.offset_bottom = 48.0
+	spaceship_button.pressed.connect(_on_spaceship_button_pressed)
+	spaceship_button_layer.add_child(spaceship_button)
+
+func _on_spaceship_button_pressed():
+	if spacecraft_nodes.is_empty():
+		return
+
+	_select_focus_target_from_ui(spacecraft_nodes[0])
+
+func _select_focus_target_from_ui(target_view):
+	if target_view == null:
+		return
+
+	_set_hovered_body(target_view)
+	_set_selected_body(target_view)
 
 func update_hover_from_screen_position(mouse_position: Vector2):
 	if camera_rig == null:

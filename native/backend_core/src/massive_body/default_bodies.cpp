@@ -1,5 +1,6 @@
 #include "massive_body/default_bodies.h"
 
+#include <cmath>
 #include <numbers>
 
 namespace solar {
@@ -103,15 +104,39 @@ MassiveBody make_moon() {
 }
 
 Spacecraft make_demo_spacecraft() {
+    constexpr double earth_radius_km = 6371.0;
+    constexpr double leo_altitude_km = 400.0;
+    constexpr double semi_major_axis_km = earth_radius_km + leo_altitude_km;
+    constexpr double earth_mu_km3_s2 = 398600.4418;
+    constexpr double cube_side_km = 0.1;
+    const double orbital_period_s =
+        2.0 * std::numbers::pi *
+        std::sqrt((semi_major_axis_km * semi_major_axis_km * semi_major_axis_km) /
+                  earth_mu_km3_s2);
+
     return Spacecraft{
         .id = "demo_probe",
         .name = "Demo Probe",
         .reference_body_index = 1,
+        .orbit =
+            {
+                .central_body_index = 1,
+                .semi_major_axis_km = semi_major_axis_km,
+                .eccentricity = 0.0,
+                .inclination_rad = deg_to_rad(60.0),
+                .longitude_of_ascending_node_rad = 0.0,
+                .argument_of_periapsis_rad = 0.0,
+                .apoapsis_km = semi_major_axis_km,
+                .anomaly_kind = OrbitalAnomalyKind::MeanAnomaly,
+                .anomaly_at_epoch = 0.0,
+            },
         .color = {0.95f, 0.95f, 0.75f},
-        .bounding_radius_km = 0.02,
-        .preferred_min_distance_km = 0.05,
+        .orbital_period_s = orbital_period_s,
+        .bounding_radius_km = std::sqrt(3.0) * cube_side_km * 0.5,
+        .visual_size_km = cube_side_km,
+        .preferred_min_distance_km = 0.25,
         .preferred_max_distance_km = 50000.0,
-        .relative_position_km = {.x = 12000.0, .y = 0.0, .z = 0.0},
+        .relative_position_km = {},
         .relative_velocity_km_s = {},
         .position_km = {},
         .velocity_km_s = {},

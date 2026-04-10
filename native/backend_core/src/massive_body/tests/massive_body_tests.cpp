@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <numbers>
+
 #include "massive_body/default_bodies.h"
 #include "massive_body/massive_body.h"
 
@@ -73,7 +75,12 @@ TEST(MassiveBodyTest, DefaultSpacecraftConfiguration) {
     EXPECT_EQ(probe.id, "demo_probe");
     EXPECT_EQ(probe.name, "Demo Probe");
     EXPECT_EQ(probe.reference_body_index, 1);
-    EXPECT_GT(probe.bounding_radius_km, 0.0);
+    EXPECT_DOUBLE_EQ(probe.orbit.semi_major_axis_km, 6771.0);
+    EXPECT_DOUBLE_EQ(probe.orbit.eccentricity, 0.0);
+    EXPECT_NEAR(probe.orbit.inclination_rad, std::numbers::pi / 3.0, 1e-12);
+    EXPECT_EQ(probe.orbit.central_body_index, 1);
+    EXPECT_GT(probe.orbital_period_s, 0.0);
+    EXPECT_NEAR(probe.visual_size_km, 0.1, 1e-12);
+    EXPECT_NEAR(probe.bounding_radius_km, 0.0866025, 0.000001);
     EXPECT_GT(probe.preferred_max_distance_km, probe.preferred_min_distance_km);
-    EXPECT_GT(probe.relative_position_km.x, 0.0);
 }
