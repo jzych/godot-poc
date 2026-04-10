@@ -135,7 +135,7 @@ Spacecraft make_demo_spacecraft() {
                 .anomaly_kind = OrbitalAnomalyKind::MeanAnomaly,
                 .anomaly_at_epoch = 0.0,
             },
-        .color = {0.95f, 0.95f, 0.75f},
+        .color = {1.0f, 0.2f, 0.75f},
         .orbital_period_s = orbital_period_s,
         .bounding_radius_km = std::sqrt(3.0) * cube_side_km * 0.5,
         .visual_size_km = cube_side_km,

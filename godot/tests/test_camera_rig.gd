@@ -447,6 +447,7 @@ func test_spaceship_button_selects_cube_spacecraft_target():
 	assert_eq(scene.spaceship_button.anchor_left, 1.0, "Spaceship shortcut should anchor to the top-right corner")
 	assert_eq(scene.spaceship_button.anchor_right, 1.0, "Spaceship shortcut should anchor to the top-right corner")
 	assert_true(spacecraft.body_mesh.mesh is BoxMesh, "Spacecraft should render as a cube")
+	assert_eq(spacecraft.get_base_color(), Color(1.0, 0.2, 0.75), "Spacecraft cube should render pink")
 	assert_almost_eq(cube_mesh.size.x, 0.1 * KM_TO_UNITS, 0.000001, "Spacecraft cube should be 100m wide")
 	assert_almost_eq(cube_mesh.size.y, 0.1 * KM_TO_UNITS, 0.000001, "Spacecraft cube should be 100m tall")
 	assert_almost_eq(cube_mesh.size.z, 0.1 * KM_TO_UNITS, 0.000001, "Spacecraft cube should be 100m deep")

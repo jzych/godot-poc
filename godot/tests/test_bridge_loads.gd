@@ -173,6 +173,7 @@ func test_bridge_exposes_unified_focus_targets_with_spacecraft():
 	assert_eq(spacecraft_state["focus_type"], "spacecraft", "Default spacecraft should be exported as a spacecraft focus target")
 	assert_eq(spacecraft_state["source_kind"], "spacecraft", "Spacecraft target should identify its source kind")
 	assert_eq(spacecraft_state["central_body_name"], "Earth", "Default spacecraft should be registered near Earth")
+	assert_eq(spacecraft_state["color"], Color(1.0, 0.2, 0.75), "Default spacecraft should render pink")
 	assert_eq(spacecraft_state["visual_shape"], "cube", "Default spacecraft should request a cube visual")
 	assert_almost_eq(spacecraft_state["visual_size_km"], 0.1, 0.000001, "Default spacecraft cube should be 100m per side")
 	assert_gt(spacecraft_state["radius_km"], 0.0, "Spacecraft should expose a framing radius")

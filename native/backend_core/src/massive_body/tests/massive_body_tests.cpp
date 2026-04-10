@@ -85,6 +85,9 @@ TEST(MassiveBodyTest, DefaultSpacecraftConfiguration) {
     EXPECT_NEAR(probe.orbit.inclination_rad, std::numbers::pi / 3.0, 1e-12);
     EXPECT_EQ(probe.orbit.central_body_index, 1);
     EXPECT_GT(probe.orbital_period_s, 0.0);
+    EXPECT_FLOAT_EQ(probe.color.r, 1.0f);
+    EXPECT_FLOAT_EQ(probe.color.g, 0.2f);
+    EXPECT_FLOAT_EQ(probe.color.b, 0.75f);
     EXPECT_NEAR(probe.visual_size_km, 0.1, 1e-12);
     EXPECT_NEAR(probe.bounding_radius_km, 0.0866025, 0.000001);
     EXPECT_GT(probe.preferred_max_distance_km, probe.preferred_min_distance_km);
