@@ -28,6 +28,8 @@ var visual_size_km: float = 2.0
 var visual_size_units: float = 2.0
 var preferred_min_distance_km: float = 1.0
 var preferred_max_distance_km: float = 1.0
+var preferred_min_distance_units: float = 1.0
+var preferred_max_distance_units: float = 1.0
 var orbit_state: Dictionary = {}
 var rotation_state: Dictionary = {}
 
@@ -66,6 +68,8 @@ func configure(index: int, state: Dictionary, radius_units: float):
 		visual_size_units = radius_units * 2.0
 	preferred_min_distance_km = float(state.get("preferred_min_distance_km", 1.0))
 	preferred_max_distance_km = float(state.get("preferred_max_distance_km", 1.0))
+	preferred_min_distance_units = preferred_min_distance_km * float(state.get("km_to_units", 1.0))
+	preferred_max_distance_units = preferred_max_distance_km * float(state.get("km_to_units", 1.0))
 	orbit_state = state.get("orbit", {})
 	rotation_state = state.get("rotation", {})
 	_body_mesh_resource = _build_body_mesh(radius_units)

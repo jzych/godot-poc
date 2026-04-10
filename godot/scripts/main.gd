@@ -156,7 +156,11 @@ func _setup_camera():
 	var earth_pos: Vector3 = earth_view.global_position if earth_view != null else bridge.get_body_state(1)["position"]
 	var outward = earth_pos.normalized()
 	var camera_offset = outward * 3.0 + Vector3(0, 2.0, 0)
-	camera_rig.configure_from_offset(earth_pos, camera_offset)
+	camera_rig.configure_from_focus_target(
+		earth_pos,
+		camera_offset,
+		_build_camera_focus_state(earth_view)
+	)
 
 func _setup_spaceship_button():
 	if spaceship_button_layer != null:
@@ -327,7 +331,22 @@ func _start_focus_lock(body_view):
 		return
 
 	locked_body_view = body_view
-	camera_rig.start_focus_lock(body_view.global_position, body_view.body_radius)
+	camera_rig.start_focus_lock_for_target(
+		body_view.global_position,
+		_build_camera_focus_state(body_view)
+	)
+
+func _build_camera_focus_state(body_view) -> Dictionary:
+	if body_view == null:
+		return {}
+
+	return {
+		"id": body_view.focus_id,
+		"focus_type": body_view.focus_type,
+		"framing_radius": body_view.body_radius,
+		"preferred_min_distance": body_view.preferred_min_distance_units,
+		"preferred_max_distance": body_view.preferred_max_distance_units,
+	}
 
 func _queue_interaction_sync():
 	if _interaction_sync_queued:

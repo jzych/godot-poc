@@ -88,6 +88,35 @@ func test_camera_scene_exposes_active_camera():
 	var camera: Camera3D = rig.get_camera_node()
 
 	assert_true(camera.current, "Camera rig should expose the active camera")
+	assert_eq(camera.projection, Camera3D.PROJECTION_PERSPECTIVE, "Camera rig should always use perspective projection")
+	assert_eq(camera.fov, rig.fixed_fov_degrees, "Camera rig should keep a fixed FOV during normal operation")
+
+func test_camera_state_exposes_logical_focus_and_zoom_values():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_focus_target(
+		Vector3(10.0, 5.0, 10.0),
+		Vector3(0.0, 2.0, 4.0),
+		{
+			"id": "earth",
+			"focus_type": "planet",
+			"framing_radius": 1.0,
+			"preferred_min_distance": 2.0,
+			"preferred_max_distance": 200.0,
+		}
+	)
+
+	var camera_state: Dictionary = rig.get_camera_state()
+
+	assert_eq(camera_state["current_focus_id"], "earth", "Camera state should expose the current logical focus id")
+	assert_eq(camera_state["current_focus_type"], "planet", "Camera state should expose the current logical focus type")
+	assert_eq(camera_state["yaw"], rig.yaw_degrees_value, "Camera state should expose yaw")
+	assert_eq(camera_state["pitch"], rig.pitch_degrees_value, "Camera state should expose pitch")
+	assert_eq(camera_state["focus_distance"], rig.current_distance, "Camera state should expose current focus distance")
+	assert_eq(camera_state["effective_fov"], rig.fixed_fov_degrees, "Camera state should expose the fixed effective FOV")
+	assert_gte(camera_state["zoom_scalar"], 0.0, "Zoom scalar should be normalized")
+	assert_lte(camera_state["zoom_scalar"], 1.0, "Zoom scalar should be normalized")
 
 func test_zoom_input_changes_target_distance_without_moving_focus():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
@@ -98,6 +127,7 @@ func test_zoom_input_changes_target_distance_without_moving_focus():
 	var initial_focus: Vector3 = rig.focus_position
 	var initial_yaw: float = rig.yaw_degrees_value
 	var initial_pitch: float = rig.pitch_degrees_value
+	var initial_fov: float = rig.get_camera_node().fov
 
 	rig._unhandled_input(_mouse_button_event(4, true))
 
@@ -105,6 +135,7 @@ func test_zoom_input_changes_target_distance_without_moving_focus():
 	assert_eq(rig.focus_position, initial_focus, "Zoom input should not move the focus point")
 	assert_eq(rig.yaw_degrees_value, initial_yaw, "Zoom input should not change yaw")
 	assert_eq(rig.pitch_degrees_value, initial_pitch, "Zoom input should not change pitch")
+	assert_eq(rig.get_camera_node().fov, initial_fov, "Zoom input should not animate FOV")
 
 func test_zoom_interpolates_toward_target_distance():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
@@ -135,6 +166,41 @@ func test_zoom_respects_distance_bounds():
 	for _j in range(30):
 		rig.apply_zoom_step(1.0)
 	assert_eq(rig.target_distance, rig.max_distance, "Zoom out should clamp to max distance")
+
+func test_focus_target_zoom_bounds_reinterpret_current_zoom_scale():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_focus_target(
+		Vector3.ZERO,
+		Vector3(0.0, 0.0, 10.0),
+		{
+			"id": "earth",
+			"focus_type": "planet",
+			"framing_radius": 1.0,
+			"preferred_min_distance": 1.0,
+			"preferred_max_distance": 1000.0,
+		}
+	)
+	rig.target_distance = 10.0
+	var earth_zoom_scalar: float = rig.get_zoom_scalar()
+
+	rig.start_focus_lock_for_target(
+		Vector3(20.0, 0.0, 0.0),
+		{
+			"id": "demo_probe",
+			"focus_type": "spacecraft",
+			"framing_radius": 0.00001,
+			"preferred_min_distance": 0.00002,
+			"preferred_max_distance": 3.0,
+		}
+	)
+
+	assert_eq(rig.current_focus_id, "demo_probe", "Focus lock should switch to the spacecraft focus id")
+	assert_eq(rig.current_focus_type, "spacecraft", "Focus lock should switch to the spacecraft focus type")
+	assert_almost_eq(rig.get_zoom_scalar(), earth_zoom_scalar, 0.000001, "Focus switching should preserve normalized zoom scale")
+	assert_gte(rig.target_distance, rig.current_focus_min_distance, "Spacecraft target distance should respect target min bounds")
+	assert_lte(rig.target_distance, rig.current_focus_max_distance, "Spacecraft target distance should respect target max bounds")
 
 func test_keyboard_pan_moves_focus_on_fixed_plane():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
@@ -320,3 +386,5 @@ func test_spaceship_button_double_click_locks_spacecraft_view():
 	assert_eq(scene.selected_body_view, spacecraft, "Spaceship double-click should select the spacecraft")
 	assert_eq(scene.locked_body_view, spacecraft, "Spaceship double-click should lock onto the spacecraft")
 	assert_true(scene.camera_rig.is_focus_lock_active(), "Spaceship double-click should start camera focus lock")
+	assert_eq(scene.camera_rig.current_focus_id, spacecraft.focus_id, "Spaceship double-click should switch camera focus id")
+	assert_eq(scene.camera_rig.current_focus_type, "spacecraft", "Spaceship double-click should use the spacecraft focus type")
