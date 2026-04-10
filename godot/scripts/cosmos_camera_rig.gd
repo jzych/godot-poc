@@ -191,6 +191,12 @@ func get_camera_state() -> Dictionary:
 		"pitch": pitch_degrees_value,
 		"focus_distance": current_distance,
 		"target_focus_distance": target_distance,
+		"min_focus_distance": _get_active_min_distance(),
+		"max_focus_distance": _get_active_max_distance(),
+		"near_clip": camera.near if camera != null else min_near_clip,
+		"far_clip": camera.far if camera != null else min_far_clip,
+		"projection": "perspective" if camera == null or camera.projection == Camera3D.PROJECTION_PERSPECTIVE else "other",
+		"camera_local_position": camera.position if camera != null else Vector3.ZERO,
 		"effective_fov": camera.fov if camera != null else fixed_fov_degrees,
 		"zoom_scalar": get_zoom_scalar(),
 	}

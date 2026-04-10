@@ -11,6 +11,8 @@ const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
 const HOVER_HIGHLIGHT_COLOR := Color.WHITE
 const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
+const CAMERA_DEBUG_PANEL_SIZE := Vector2(360.0, 238.0)
+const CAMERA_DEBUG_PANEL_MARGIN := 12.0
 
 var bridge: SolarSystemBridge
 var focus_controller: FocusController
@@ -23,6 +25,9 @@ var selected_body_view = null
 var locked_body_view = null
 var spaceship_button_layer: CanvasLayer = null
 var spaceship_button: Button = null
+var camera_debug_layer: CanvasLayer = null
+var camera_debug_panel: PanelContainer = null
+var camera_debug_label: Label = null
 var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
@@ -46,6 +51,8 @@ func _ready():
 	_setup_light()
 	_setup_camera()
 	_setup_spaceship_button()
+	_setup_camera_debug_panel()
+	_sync_camera_debug_panel()
 
 func _spawn_bodies():
 	for i in range(bridge.get_body_count()):
@@ -114,6 +121,7 @@ func _process(_delta):
 
 	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
+	_sync_camera_debug_panel()
 	_queue_interaction_sync()
 
 func _input(event):
@@ -190,6 +198,49 @@ func _setup_spaceship_button():
 	spaceship_button.gui_input.connect(_on_spaceship_button_gui_input)
 	spaceship_button.pressed.connect(_on_spaceship_button_pressed)
 	spaceship_button_layer.add_child(spaceship_button)
+
+func _setup_camera_debug_panel():
+	if camera_debug_layer != null:
+		return
+
+	camera_debug_layer = CanvasLayer.new()
+	camera_debug_layer.name = "CameraDebugLayer"
+	camera_debug_layer.layer = 20
+	add_child(camera_debug_layer)
+
+	camera_debug_panel = PanelContainer.new()
+	camera_debug_panel.name = "CameraDebugPanel"
+	camera_debug_panel.anchor_left = 1.0
+	camera_debug_panel.anchor_right = 1.0
+	camera_debug_panel.anchor_top = 1.0
+	camera_debug_panel.anchor_bottom = 1.0
+	camera_debug_panel.offset_left = -CAMERA_DEBUG_PANEL_SIZE.x - CAMERA_DEBUG_PANEL_MARGIN
+	camera_debug_panel.offset_right = -CAMERA_DEBUG_PANEL_MARGIN
+	camera_debug_panel.offset_top = -CAMERA_DEBUG_PANEL_SIZE.y - CAMERA_DEBUG_PANEL_MARGIN
+	camera_debug_panel.offset_bottom = -CAMERA_DEBUG_PANEL_MARGIN
+	camera_debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.02, 0.025, 0.035, 0.78)
+	panel_style.border_color = Color(0.45, 0.58, 0.68, 0.85)
+	panel_style.set_border_width_all(1)
+	panel_style.set_corner_radius_all(6)
+	camera_debug_panel.add_theme_stylebox_override("panel", panel_style)
+	camera_debug_layer.add_child(camera_debug_panel)
+
+	var margin_container := MarginContainer.new()
+	margin_container.add_theme_constant_override("margin_left", 10)
+	margin_container.add_theme_constant_override("margin_top", 8)
+	margin_container.add_theme_constant_override("margin_right", 10)
+	margin_container.add_theme_constant_override("margin_bottom", 8)
+	camera_debug_panel.add_child(margin_container)
+
+	camera_debug_label = Label.new()
+	camera_debug_label.name = "CameraDebugLabel"
+	camera_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	camera_debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	camera_debug_label.add_theme_font_size_override("font_size", 13)
+	camera_debug_label.add_theme_color_override("font_color", Color(0.82, 0.92, 1.0, 1.0))
+	margin_container.add_child(camera_debug_label)
 
 func _on_spaceship_button_pressed():
 	_activate_spaceship_button(false)
@@ -394,3 +445,86 @@ func _set_render_origin(new_render_origin: Vector3):
 
 	if camera_rig != null:
 		camera_rig.apply_render_origin_shift(origin_delta)
+
+func _sync_camera_debug_panel():
+	if camera_debug_label == null or camera_rig == null:
+		return
+
+	camera_debug_label.text = _build_camera_debug_text()
+
+func _build_camera_debug_text() -> String:
+	var camera_state: Dictionary = camera_rig.get_camera_state()
+	var camera: Camera3D = camera_rig.get_camera_node()
+	var focus_name := "none"
+	if locked_body_view != null:
+		focus_name = locked_body_view.body_label
+	elif selected_body_view != null:
+		focus_name = selected_body_view.body_label
+	elif hovered_body_view != null:
+		focus_name = hovered_body_view.body_label
+
+	var spacecraft_rendered := false
+	for spacecraft_view in spacecraft_nodes:
+		if spacecraft_view.body_mesh.mesh != null:
+			spacecraft_rendered = true
+			break
+
+	return "\n".join([
+		"Camera View",
+		"projection: %s  fov: %.2f deg" % [
+			str(camera_state.get("projection", "unknown")),
+			float(camera_state.get("effective_fov", 0.0)),
+		],
+		"focus: %s (%s/%s)" % [
+			focus_name,
+			str(camera_state.get("current_focus_id", "")),
+			str(camera_state.get("current_focus_type", "")),
+		],
+		"locked: %s  zoom: %.4f" % [
+			str(camera_rig.is_focus_lock_active()),
+			float(camera_state.get("zoom_scalar", 0.0)),
+		],
+		"distance: %s -> %s" % [
+			_format_debug_float(float(camera_state.get("focus_distance", 0.0))),
+			_format_debug_float(float(camera_state.get("target_focus_distance", 0.0))),
+		],
+		"bounds: %s .. %s" % [
+			_format_debug_float(float(camera_state.get("min_focus_distance", 0.0))),
+			_format_debug_float(float(camera_state.get("max_focus_distance", 0.0))),
+		],
+		"clip: near %s  far %s" % [
+			_format_debug_float(float(camera_state.get("near_clip", 0.0))),
+			_format_debug_float(float(camera_state.get("far_clip", 0.0))),
+		],
+		"yaw/pitch: %.2f / %.2f" % [
+			float(camera_state.get("yaw", 0.0)),
+			float(camera_state.get("pitch", 0.0)),
+		],
+		"camera local: %s" % _format_debug_vector(camera.position if camera != null else Vector3.ZERO),
+		"render origin: %s" % _format_debug_vector(render_origin_position),
+		"small objects: %s (%d spacecraft)" % [
+			"rendered" if spacecraft_rendered else "not rendered",
+			spacecraft_nodes.size(),
+		],
+	])
+
+func _format_debug_float(value: float) -> String:
+	var abs_value := absf(value)
+	if is_zero_approx(value):
+		return "0"
+	if abs_value >= 1000000000.0:
+		return "%.3fG" % (value / 1000000000.0)
+	if abs_value >= 1000000.0:
+		return "%.3fM" % (value / 1000000.0)
+	if abs_value >= 10000.0:
+		return "%.3fk" % (value / 1000.0)
+	if abs_value < 0.001:
+		return "%.9f" % value
+	return "%.6f" % value
+
+func _format_debug_vector(value: Vector3) -> String:
+	return "(%s, %s, %s)" % [
+		_format_debug_float(value.x),
+		_format_debug_float(value.y),
+		_format_debug_float(value.z),
+	]

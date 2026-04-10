@@ -115,6 +115,11 @@ func test_camera_state_exposes_logical_focus_and_zoom_values():
 	assert_eq(camera_state["pitch"], rig.pitch_degrees_value, "Camera state should expose pitch")
 	assert_eq(camera_state["focus_distance"], rig.current_distance, "Camera state should expose current focus distance")
 	assert_eq(camera_state["effective_fov"], rig.fixed_fov_degrees, "Camera state should expose the fixed effective FOV")
+	assert_eq(camera_state["projection"], "perspective", "Camera state should expose the active projection")
+	assert_eq(camera_state["min_focus_distance"], rig.current_focus_min_distance, "Camera state should expose active min zoom")
+	assert_eq(camera_state["max_focus_distance"], rig.current_focus_max_distance, "Camera state should expose active max zoom")
+	assert_eq(camera_state["near_clip"], rig.get_camera_node().near, "Camera state should expose near clip")
+	assert_eq(camera_state["far_clip"], rig.get_camera_node().far, "Camera state should expose far clip")
 	assert_gte(camera_state["zoom_scalar"], 0.0, "Zoom scalar should be normalized")
 	assert_lte(camera_state["zoom_scalar"], 1.0, "Zoom scalar should be normalized")
 
@@ -411,6 +416,28 @@ func test_spaceship_button_selects_cube_spacecraft_target():
 
 	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship shortcut should target the spacecraft like a direct object click")
 	assert_eq(scene.selected_body_view, spacecraft, "Spaceship shortcut should select the spacecraft")
+
+func test_camera_debug_panel_shows_view_parameters():
+	var scene := _spawn_main_scene()
+	await _wait_frames(2)
+
+	assert_not_null(scene.camera_debug_layer, "Main scene should create a camera debug layer")
+	assert_not_null(scene.camera_debug_panel, "Main scene should create a camera debug panel")
+	assert_not_null(scene.camera_debug_label, "Main scene should create a camera debug label")
+	assert_eq(scene.camera_debug_panel.anchor_left, 1.0, "Camera debug panel should anchor to the right")
+	assert_eq(scene.camera_debug_panel.anchor_top, 1.0, "Camera debug panel should anchor to the bottom")
+	assert_true(scene.camera_debug_label.text.contains("Camera View"), "Camera debug panel should have a title")
+	assert_true(scene.camera_debug_label.text.contains("projection: perspective"), "Camera debug panel should show projection")
+	assert_true(scene.camera_debug_label.text.contains("distance:"), "Camera debug panel should show zoom distance")
+	assert_true(scene.camera_debug_label.text.contains("bounds:"), "Camera debug panel should show zoom bounds")
+	assert_true(scene.camera_debug_label.text.contains("clip:"), "Camera debug panel should show clip planes")
+	assert_true(scene.camera_debug_label.text.contains("small objects: rendered"), "Camera debug panel should show spacecraft render status")
+
+	scene._start_focus_lock(scene.spacecraft_nodes[0])
+	scene._sync_camera_debug_panel()
+
+	assert_true(scene.camera_debug_label.text.contains("demo_probe"), "Camera debug panel should show locked spacecraft focus")
+	assert_true(scene.camera_debug_label.text.contains("render origin:"), "Camera debug panel should show render origin")
 
 func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 	var scene := _spawn_main_scene()
