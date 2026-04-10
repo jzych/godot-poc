@@ -18,12 +18,18 @@ func _spawn_main_scene() -> Node3D:
 	autofree(scene)
 	return scene
 
-func _mouse_button_event(button_index: int, pressed: bool, position: Vector2 = Vector2.ZERO) -> InputEventMouseButton:
+func _mouse_button_event(
+	button_index: int,
+	pressed: bool,
+	position: Vector2 = Vector2.ZERO,
+	double_click: bool = false
+) -> InputEventMouseButton:
 	var event := InputEventMouseButton.new()
 	event.button_index = button_index
 	event.pressed = pressed
 	event.position = position
 	event.global_position = position
+	event.double_click = double_click
 	return event
 
 func _mouse_motion_event(relative: Vector2, position: Vector2 = Vector2.ZERO) -> InputEventMouseMotion:
@@ -295,3 +301,22 @@ func test_spaceship_button_selects_cube_spacecraft_target():
 
 	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship shortcut should target the spacecraft like a direct object click")
 	assert_eq(scene.selected_body_view, spacecraft, "Spaceship shortcut should select the spacecraft")
+
+func test_spaceship_button_double_click_locks_spacecraft_view():
+	var scene := _spawn_main_scene()
+	await _wait_frames(2)
+
+	var spacecraft = scene.spacecraft_nodes[0]
+	var double_click := _mouse_button_event(
+		MOUSE_BUTTON_LEFT,
+		true,
+		Vector2(8.0, 8.0),
+		true
+	)
+
+	scene.spaceship_button.emit_signal("gui_input", double_click)
+
+	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship double-click should target the spacecraft")
+	assert_eq(scene.selected_body_view, spacecraft, "Spaceship double-click should select the spacecraft")
+	assert_eq(scene.locked_body_view, spacecraft, "Spaceship double-click should lock onto the spacecraft")
+	assert_true(scene.camera_rig.is_focus_lock_active(), "Spaceship double-click should start camera focus lock")

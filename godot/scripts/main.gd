@@ -179,14 +179,30 @@ func _setup_spaceship_button():
 	spaceship_button.offset_right = -12.0
 	spaceship_button.offset_top = 12.0
 	spaceship_button.offset_bottom = 48.0
+	spaceship_button.gui_input.connect(_on_spaceship_button_gui_input)
 	spaceship_button.pressed.connect(_on_spaceship_button_pressed)
 	spaceship_button_layer.add_child(spaceship_button)
 
 func _on_spaceship_button_pressed():
+	_activate_spaceship_button(false)
+
+func _on_spaceship_button_gui_input(event: InputEvent):
+	if not (event is InputEventMouseButton):
+		return
+	if event.button_index != MOUSE_BUTTON_LEFT or not event.pressed or not event.double_click:
+		return
+
+	_activate_spaceship_button(true)
+	spaceship_button.accept_event()
+
+func _activate_spaceship_button(lock_view: bool):
 	if spacecraft_nodes.is_empty():
 		return
 
-	_select_focus_target_from_ui(spacecraft_nodes[0])
+	var spacecraft_view = spacecraft_nodes[0]
+	_select_focus_target_from_ui(spacecraft_view)
+	if lock_view:
+		_start_focus_lock(spacecraft_view)
 
 func _select_focus_target_from_ui(target_view):
 	if target_view == null:
