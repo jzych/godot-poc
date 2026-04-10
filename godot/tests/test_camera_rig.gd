@@ -420,7 +420,18 @@ func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 	var rig: CosmosCameraRig = scene.camera_rig
 	scene._start_focus_lock(spacecraft)
 
-	for _i in range(80):
+	assert_lt(
+		spacecraft.global_position.length(),
+		0.000000001,
+		"Spacecraft lock should rebase the render frame around the spacecraft"
+	)
+	assert_eq(
+		rig.current_focus_max_distance,
+		rig.max_distance,
+		"Spacecraft lock should still allow zooming out to the full system scale"
+	)
+
+	for _i in range(140):
 		rig.apply_zoom_step(-1.0)
 
 	var expected_min_distance: float = rig.get_focus_lock_distance_for_radius(
@@ -435,13 +446,18 @@ func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 	assert_almost_eq(
 		rig.current_focus_min_distance,
 		expected_min_distance,
-		0.000001,
+		0.000000000001,
 		"Spacecraft max zoom-in should be derived from its visual size metadata"
+	)
+	assert_lt(
+		rig.current_focus_min_distance,
+		0.00001,
+		"Spacecraft detail view needs a camera floor near the real 100m visual size"
 	)
 	assert_almost_eq(
 		rig.target_distance,
 		rig.current_focus_min_distance,
-		0.000001,
+		0.000000000001,
 		"Spacecraft zoom-in should stop at the size-derived camera floor"
 	)
 	assert_gte(
@@ -453,6 +469,45 @@ func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 		side_view_fraction,
 		rig.max_focus_diameter_view_fraction + 0.000001,
 		"Spacecraft side should not exceed the configured max screen-height fraction"
+	)
+
+	for _j in range(320):
+		rig.apply_zoom_step(1.0)
+
+	assert_gt(
+		rig.target_distance,
+		10000.0,
+		"Spacecraft lock should allow zooming back out to solar-system scale"
+	)
+
+func test_close_scale_zoom_updates_camera_transform():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_focus_target(
+		Vector3.ZERO,
+		Vector3(0.0, 0.0, 0.00001),
+		{
+			"id": "demo_probe",
+			"focus_type": "spacecraft",
+			"framing_radius": 0.000003,
+			"preferred_min_distance": 0.000001,
+			"preferred_max_distance": 1.0,
+		}
+	)
+	for _i in range(16):
+		rig.apply_zoom_step(-1.0)
+	rig._process(0.05)
+
+	assert_lt(
+		rig.get_camera_node().position.z,
+		0.00001,
+		"Camera transform should update when zooming at spacecraft-scale distances"
+	)
+	assert_lt(
+		rig.get_camera_node().near,
+		rig.get_camera_node().position.z,
+		"Near clip should stay below spacecraft-scale camera distance"
 	)
 
 func test_spaceship_button_double_click_locks_spacecraft_view():

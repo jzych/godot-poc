@@ -26,6 +26,7 @@ var body_radius_km: float = 1.0
 var visual_shape: String = "sphere"
 var visual_size_km: float = 2.0
 var visual_size_units: float = 2.0
+var simulation_position: Vector3 = Vector3.ZERO
 var preferred_min_distance_km: float = 1.0
 var preferred_max_distance_km: float = 1.0
 var preferred_min_distance_units: float = 1.0
@@ -75,8 +76,13 @@ func configure(index: int, state: Dictionary, radius_units: float):
 	_body_mesh_resource = _build_body_mesh(radius_units)
 	_base_color = state.get("color", Color.WHITE)
 	name = body_label
+	simulation_position = state.get("position", Vector3.ZERO)
 	_refresh_rotation_model()
 	_refresh_visuals()
+
+func update_render_position(state: Dictionary, render_origin: Vector3):
+	simulation_position = state.get("position", simulation_position)
+	position = simulation_position - render_origin
 
 func is_highlight_visible() -> bool:
 	return _highlight_visible

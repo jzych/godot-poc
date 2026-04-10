@@ -27,6 +27,7 @@ var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
 var _interaction_sync_queued: bool = false
+var render_origin_position: Vector3 = Vector3.ZERO
 
 @onready var camera_rig: CosmosCameraRig = $CosmosCameraRig
 @onready var orbit_lanes_container: Node3D = $OrbitLanesContainer
@@ -65,7 +66,7 @@ func _spawn_focus_target_view(focus_index: int, state: Dictionary, parent: Node)
 	var target_view = BODY_VIEW_SCENE.instantiate()
 	parent.add_child(target_view)
 	target_view.configure(focus_index, state, radius_units)
-	target_view.position = state.get("position", Vector3.ZERO)
+	target_view.update_render_position(state, render_origin_position)
 	target_view.update_simulation_state(state, bridge.get_sim_time())
 	focus_target_nodes.append(target_view)
 	focus_controller.register_target(state, target_view)
@@ -98,15 +99,18 @@ func _process(_delta):
 	var sim_time_seconds: float = bridge.get_sim_time()
 	for i in range(body_nodes.size()):
 		var state = bridge.get_body_state(i)
-		body_nodes[i].position = state["position"]
+		body_nodes[i].update_render_position(state, render_origin_position)
 		body_nodes[i].update_simulation_state(state, sim_time_seconds)
 		focus_controller.update_target_state(state)
 
 	for i in range(spacecraft_nodes.size()):
 		var state = bridge.get_spacecraft_state(i)
-		spacecraft_nodes[i].position = state["position"]
+		spacecraft_nodes[i].update_render_position(state, render_origin_position)
 		spacecraft_nodes[i].update_simulation_state(state, sim_time_seconds)
 		focus_controller.update_target_state(state)
+
+	if locked_body_view != null and camera_rig != null and camera_rig.is_focus_lock_active():
+		_set_render_origin(locked_body_view.simulation_position)
 
 	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
@@ -331,6 +335,7 @@ func _start_focus_lock(body_view):
 		return
 
 	locked_body_view = body_view
+	_set_render_origin(body_view.simulation_position)
 	camera_rig.start_focus_lock_for_target(
 		body_view.global_position,
 		_build_camera_focus_state(body_view)
@@ -374,3 +379,18 @@ func _sync_focus_lock_target():
 		return
 
 	camera_rig.update_focus_lock_target(locked_body_view.global_position)
+
+func _set_render_origin(new_render_origin: Vector3):
+	if render_origin_position.is_equal_approx(new_render_origin):
+		return
+
+	var origin_delta: Vector3 = new_render_origin - render_origin_position
+	render_origin_position = new_render_origin
+	for target_view in focus_target_nodes:
+		target_view.position = target_view.simulation_position - render_origin_position
+
+	for orbit_lane in orbit_lane_nodes.values():
+		orbit_lane.update_center_position(_get_orbit_center_position(orbit_lane.central_body_index))
+
+	if camera_rig != null:
+		camera_rig.apply_render_origin_shift(origin_delta)
