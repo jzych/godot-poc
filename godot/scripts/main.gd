@@ -11,8 +11,12 @@ const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
 const HOVER_HIGHLIGHT_COLOR := Color.WHITE
 const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
-const CAMERA_DEBUG_PANEL_SIZE := Vector2(360.0, 238.0)
+const CAMERA_DEBUG_PANEL_SIZE := Vector2(390.0, 430.0)
 const CAMERA_DEBUG_PANEL_MARGIN := 12.0
+const CAMERA_DEBUG_SLIDER_FOV := "fov"
+const CAMERA_DEBUG_SLIDER_DISTANCE := "distance"
+const CAMERA_DEBUG_SLIDER_NEAR_RATIO := "near_ratio"
+const CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER := "far_multiplier"
 
 var bridge: SolarSystemBridge
 var focus_controller: FocusController
@@ -28,6 +32,9 @@ var spaceship_button: Button = null
 var camera_debug_layer: CanvasLayer = null
 var camera_debug_panel: PanelContainer = null
 var camera_debug_label: Label = null
+var camera_debug_sliders: Dictionary = {}
+var camera_debug_value_labels: Dictionary = {}
+var _syncing_camera_debug_controls: bool = false
 var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
@@ -218,7 +225,7 @@ func _setup_camera_debug_panel():
 	camera_debug_panel.offset_right = -CAMERA_DEBUG_PANEL_MARGIN
 	camera_debug_panel.offset_top = -CAMERA_DEBUG_PANEL_SIZE.y - CAMERA_DEBUG_PANEL_MARGIN
 	camera_debug_panel.offset_bottom = -CAMERA_DEBUG_PANEL_MARGIN
-	camera_debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	camera_debug_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.02, 0.025, 0.035, 0.78)
 	panel_style.border_color = Color(0.45, 0.58, 0.68, 0.85)
@@ -234,13 +241,97 @@ func _setup_camera_debug_panel():
 	margin_container.add_theme_constant_override("margin_bottom", 8)
 	camera_debug_panel.add_child(margin_container)
 
+	var debug_layout := VBoxContainer.new()
+	debug_layout.name = "CameraDebugLayout"
+	debug_layout.add_theme_constant_override("separation", 6)
+	margin_container.add_child(debug_layout)
+
 	camera_debug_label = Label.new()
 	camera_debug_label.name = "CameraDebugLabel"
 	camera_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	camera_debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	camera_debug_label.add_theme_font_size_override("font_size", 13)
 	camera_debug_label.add_theme_color_override("font_color", Color(0.82, 0.92, 1.0, 1.0))
-	margin_container.add_child(camera_debug_label)
+	debug_layout.add_child(camera_debug_label)
+
+	_add_camera_debug_slider(
+		debug_layout,
+		CAMERA_DEBUG_SLIDER_FOV,
+		"FOV",
+		5.0,
+		120.0,
+		0.5
+	)
+	_add_camera_debug_slider(
+		debug_layout,
+		CAMERA_DEBUG_SLIDER_DISTANCE,
+		"Distance",
+		0.0,
+		1.0,
+		0.001
+	)
+	_add_camera_debug_slider(
+		debug_layout,
+		CAMERA_DEBUG_SLIDER_NEAR_RATIO,
+		"Near ratio",
+		0.000001,
+		0.1,
+		0.0001
+	)
+	_add_camera_debug_slider(
+		debug_layout,
+		CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER,
+		"Far multiplier",
+		1.01,
+		20.0,
+		0.01
+	)
+
+func _add_camera_debug_slider(
+	parent: Container,
+	control_id: String,
+	title: String,
+	min_value: float,
+	max_value: float,
+	step_value: float
+):
+	var control_layout := VBoxContainer.new()
+	control_layout.name = "%sControl" % control_id.capitalize().replace(" ", "")
+	control_layout.add_theme_constant_override("separation", 1)
+	parent.add_child(control_layout)
+
+	var label_row := HBoxContainer.new()
+	control_layout.add_child(label_row)
+
+	var title_label := Label.new()
+	title_label.text = title
+	title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_label.add_theme_font_size_override("font_size", 12)
+	title_label.add_theme_color_override("font_color", Color(0.72, 0.84, 0.92, 1.0))
+	label_row.add_child(title_label)
+
+	var value_label := Label.new()
+	value_label.name = "%sValue" % control_id.capitalize().replace(" ", "")
+	value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value_label.custom_minimum_size = Vector2(104.0, 0.0)
+	value_label.add_theme_font_size_override("font_size", 12)
+	value_label.add_theme_color_override("font_color", Color(0.88, 0.95, 1.0, 1.0))
+	label_row.add_child(value_label)
+
+	var slider := HSlider.new()
+	slider.name = "%sSlider" % control_id.capitalize().replace(" ", "")
+	slider.min_value = min_value
+	slider.max_value = max_value
+	slider.step = step_value
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.focus_mode = Control.FOCUS_NONE
+	slider.value_changed.connect(_on_camera_debug_slider_changed.bind(control_id))
+	control_layout.add_child(slider)
+
+	camera_debug_sliders[control_id] = slider
+	camera_debug_value_labels[control_id] = value_label
 
 func _on_spaceship_button_pressed():
 	_activate_spaceship_button(false)
@@ -450,10 +541,13 @@ func _sync_camera_debug_panel():
 	if camera_debug_label == null or camera_rig == null:
 		return
 
-	camera_debug_label.text = _build_camera_debug_text()
-
-func _build_camera_debug_text() -> String:
 	var camera_state: Dictionary = camera_rig.get_camera_state()
+	camera_debug_label.text = _build_camera_debug_text(camera_state)
+	_sync_camera_debug_control_values(camera_state)
+
+func _build_camera_debug_text(camera_state: Dictionary = {}) -> String:
+	if camera_state.is_empty() and camera_rig != null:
+		camera_state = camera_rig.get_camera_state()
 	var camera: Camera3D = camera_rig.get_camera_node()
 	var focus_name := "none"
 	if locked_body_view != null:
@@ -528,3 +622,57 @@ func _format_debug_vector(value: Vector3) -> String:
 		_format_debug_float(value.y),
 		_format_debug_float(value.z),
 	]
+
+func _sync_camera_debug_control_values(camera_state: Dictionary):
+	if camera_debug_sliders.is_empty() or camera_rig == null:
+		return
+
+	_syncing_camera_debug_controls = true
+	_set_camera_debug_slider_value(
+		CAMERA_DEBUG_SLIDER_FOV,
+		float(camera_state.get("effective_fov", camera_rig.fixed_fov_degrees)),
+		"%.1f deg" % camera_rig.fixed_fov_degrees
+	)
+	_set_camera_debug_slider_value(
+		CAMERA_DEBUG_SLIDER_DISTANCE,
+		float(camera_state.get("zoom_scalar", camera_rig.get_zoom_scalar())),
+		_format_debug_float(float(camera_state.get("target_focus_distance", camera_rig.target_distance)))
+	)
+	_set_camera_debug_slider_value(
+		CAMERA_DEBUG_SLIDER_NEAR_RATIO,
+		camera_rig.near_clip_distance_ratio,
+		"%.6f" % camera_rig.near_clip_distance_ratio
+	)
+	_set_camera_debug_slider_value(
+		CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER,
+		camera_rig.far_clip_distance_multiplier,
+		"%.2fx" % camera_rig.far_clip_distance_multiplier
+	)
+	_syncing_camera_debug_controls = false
+
+func _set_camera_debug_slider_value(control_id: String, value: float, display_text: String):
+	var slider: HSlider = camera_debug_sliders.get(control_id)
+	if slider != null and not is_equal_approx(slider.value, value):
+		slider.value = value
+
+	var value_label: Label = camera_debug_value_labels.get(control_id)
+	if value_label != null:
+		value_label.text = display_text
+
+func _on_camera_debug_slider_changed(value: float, control_id: String):
+	if _syncing_camera_debug_controls or camera_rig == null:
+		return
+
+	match control_id:
+		CAMERA_DEBUG_SLIDER_FOV:
+			camera_rig.set_fixed_fov_degrees(value)
+		CAMERA_DEBUG_SLIDER_DISTANCE:
+			camera_rig.set_zoom_scalar(value)
+		CAMERA_DEBUG_SLIDER_NEAR_RATIO:
+			camera_rig.set_near_clip_distance_ratio(value)
+		CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER:
+			camera_rig.set_far_clip_distance_multiplier(value)
+
+	_sync_orbit_markers()
+	_sync_body_labels()
+	_sync_camera_debug_panel()

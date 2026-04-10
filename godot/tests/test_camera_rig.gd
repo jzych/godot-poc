@@ -123,6 +123,45 @@ func test_camera_state_exposes_logical_focus_and_zoom_values():
 	assert_gte(camera_state["zoom_scalar"], 0.0, "Zoom scalar should be normalized")
 	assert_lte(camera_state["zoom_scalar"], 1.0, "Zoom scalar should be normalized")
 
+func test_camera_rig_exposes_live_view_parameter_setters():
+	var rig: CosmosCameraRig = _spawn_camera_rig()
+	await _wait_frames(1)
+
+	rig.configure_from_focus_target(
+		Vector3.ZERO,
+		Vector3(0.0, 0.0, 100.0),
+		{
+			"id": "earth",
+			"focus_type": "planet",
+			"framing_radius": 1.0,
+			"preferred_min_distance": 1.0,
+			"preferred_max_distance": 1000.0,
+		}
+	)
+
+	rig.set_fixed_fov_degrees(45.0)
+	rig.set_zoom_scalar(0.5)
+	rig.set_near_clip_distance_ratio(0.02)
+	rig.set_far_clip_distance_multiplier(4.0)
+
+	assert_eq(rig.fixed_fov_degrees, 45.0, "FOV setter should update the active camera FOV parameter")
+	assert_almost_eq(rig.get_zoom_scalar(), 0.5, 0.000001, "Zoom scalar setter should update camera distance")
+	assert_eq(rig.near_clip_distance_ratio, 0.02, "Near clip ratio setter should update the active ratio")
+	assert_eq(rig.far_clip_distance_multiplier, 4.0, "Far clip multiplier setter should update the active multiplier")
+	assert_eq(rig.get_camera_node().fov, 45.0, "FOV setter should apply to the Camera3D node")
+	assert_almost_eq(
+		rig.get_camera_node().near,
+		max(rig.min_near_clip, rig.current_distance * 0.02),
+		0.000001,
+		"Near clip ratio setter should apply to the Camera3D node"
+	)
+	assert_almost_eq(
+		rig.get_camera_node().far,
+		max(rig.min_far_clip, rig.current_distance * 4.0),
+		0.000001,
+		"Far clip multiplier setter should apply to the Camera3D node"
+	)
+
 func test_zoom_input_changes_target_distance_without_moving_focus():
 	var rig: CosmosCameraRig = _spawn_camera_rig()
 	await _wait_frames(1)
@@ -426,18 +465,50 @@ func test_camera_debug_panel_shows_view_parameters():
 	assert_not_null(scene.camera_debug_label, "Main scene should create a camera debug label")
 	assert_eq(scene.camera_debug_panel.anchor_left, 1.0, "Camera debug panel should anchor to the right")
 	assert_eq(scene.camera_debug_panel.anchor_top, 1.0, "Camera debug panel should anchor to the bottom")
+	assert_eq(scene.camera_debug_panel.mouse_filter, Control.MOUSE_FILTER_STOP, "Camera debug panel should allow slider input without clicking through")
 	assert_true(scene.camera_debug_label.text.contains("Camera View"), "Camera debug panel should have a title")
 	assert_true(scene.camera_debug_label.text.contains("projection: perspective"), "Camera debug panel should show projection")
 	assert_true(scene.camera_debug_label.text.contains("distance:"), "Camera debug panel should show zoom distance")
 	assert_true(scene.camera_debug_label.text.contains("bounds:"), "Camera debug panel should show zoom bounds")
 	assert_true(scene.camera_debug_label.text.contains("clip:"), "Camera debug panel should show clip planes")
 	assert_true(scene.camera_debug_label.text.contains("small objects: rendered"), "Camera debug panel should show spacecraft render status")
+	assert_true(scene.camera_debug_sliders.has("fov"), "Camera debug panel should expose an FOV slider")
+	assert_true(scene.camera_debug_sliders.has("distance"), "Camera debug panel should expose a distance slider")
+	assert_true(scene.camera_debug_sliders.has("near_ratio"), "Camera debug panel should expose a near clip ratio slider")
+	assert_true(scene.camera_debug_sliders.has("far_multiplier"), "Camera debug panel should expose a far clip multiplier slider")
 
 	scene._start_focus_lock(scene.spacecraft_nodes[0])
 	scene._sync_camera_debug_panel()
 
 	assert_true(scene.camera_debug_label.text.contains("demo_probe"), "Camera debug panel should show locked spacecraft focus")
 	assert_true(scene.camera_debug_label.text.contains("render origin:"), "Camera debug panel should show render origin")
+
+func test_camera_debug_sliders_live_adjust_camera_parameters():
+	var scene := _spawn_main_scene()
+	await _wait_frames(2)
+
+	var fov_slider: HSlider = scene.camera_debug_sliders["fov"]
+	var distance_slider: HSlider = scene.camera_debug_sliders["distance"]
+	var near_slider: HSlider = scene.camera_debug_sliders["near_ratio"]
+	var far_slider: HSlider = scene.camera_debug_sliders["far_multiplier"]
+
+	fov_slider.value = 55.0
+	distance_slider.value = 0.5
+	near_slider.value = 0.02
+	far_slider.value = 4.0
+
+	assert_eq(scene.camera_rig.fixed_fov_degrees, 55.0, "FOV slider should update camera FOV")
+	assert_almost_eq(scene.camera_rig.get_zoom_scalar(), 0.5, 0.000001, "Distance slider should update zoom scalar")
+	assert_almost_eq(
+		scene.camera_rig.near_clip_distance_ratio,
+		0.02,
+		0.00001,
+		"Near ratio slider should update camera near clip ratio"
+	)
+	assert_eq(scene.camera_rig.far_clip_distance_multiplier, 4.0, "Far multiplier slider should update camera far clip multiplier")
+	assert_eq(scene.camera_rig.get_camera_node().fov, 55.0, "FOV slider should apply to Camera3D")
+	assert_true(scene.camera_debug_label.text.contains("fov: 55.00 deg"), "Debug label should refresh after slider changes")
+	assert_true(scene.camera_debug_label.text.contains("zoom: 0.5000"), "Debug label should show updated zoom scalar")
 
 func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 	var scene := _spawn_main_scene()
