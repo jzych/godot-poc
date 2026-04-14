@@ -2,6 +2,7 @@ extends GutTest
 
 const CAMERA_RIG_SCENE := preload("res://scenes/cosmos_camera_rig.tscn")
 const MAIN_SCENE := preload("res://scenes/main.tscn")
+const RenderDomainScript := preload("res://scripts/render_domain.gd")
 const KM_PER_AU := 149597870.7
 const AU_TO_UNITS := 10000.0
 const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
@@ -457,59 +458,44 @@ func test_spaceship_button_selects_cube_spacecraft_target():
 	assert_eq(scene.hovered_body_view, spacecraft, "Spaceship shortcut should target the spacecraft like a direct object click")
 	assert_eq(scene.selected_body_view, spacecraft, "Spaceship shortcut should select the spacecraft")
 
-func test_camera_debug_panel_shows_view_parameters():
+func test_render_domains_create_composited_viewports():
 	var scene := _spawn_main_scene()
 	await _wait_frames(2)
 
-	assert_not_null(scene.camera_debug_layer, "Main scene should create a camera debug layer")
-	assert_not_null(scene.camera_debug_panel, "Main scene should create a camera debug panel")
-	assert_not_null(scene.camera_debug_label, "Main scene should create a camera debug label")
-	assert_eq(scene.camera_debug_panel.anchor_left, 1.0, "Camera debug panel should anchor to the right")
-	assert_eq(scene.camera_debug_panel.anchor_top, 1.0, "Camera debug panel should anchor to the bottom")
-	assert_eq(scene.camera_debug_panel.mouse_filter, Control.MOUSE_FILTER_STOP, "Camera debug panel should allow slider input without clicking through")
-	assert_true(scene.camera_debug_label.text.contains("Camera View"), "Camera debug panel should have a title")
-	assert_true(scene.camera_debug_label.text.contains("projection: perspective"), "Camera debug panel should show projection")
-	assert_true(scene.camera_debug_label.text.contains("distance:"), "Camera debug panel should show zoom distance")
-	assert_true(scene.camera_debug_label.text.contains("bounds:"), "Camera debug panel should show zoom bounds")
-	assert_true(scene.camera_debug_label.text.contains("clip:"), "Camera debug panel should show clip planes")
-	assert_true(scene.camera_debug_label.text.contains("small objects: rendered"), "Camera debug panel should show spacecraft render status")
-	assert_true(scene.camera_debug_sliders.has("fov"), "Camera debug panel should expose an FOV slider")
-	assert_true(scene.camera_debug_sliders.has("distance"), "Camera debug panel should expose a distance slider")
-	assert_true(scene.camera_debug_sliders.has("near_ratio"), "Camera debug panel should expose a near clip ratio slider")
-	assert_true(scene.camera_debug_sliders.has("far_multiplier"), "Camera debug panel should expose a far clip multiplier slider")
+	assert_not_null(scene.render_composite_layer, "Main scene should create a composite layer for render domains")
+	assert_true(scene.render_domain_viewports.has(RenderDomainScript.NEAR), "Main scene should create a near viewport")
+	assert_true(scene.render_domain_viewports.has(RenderDomainScript.MID), "Main scene should create a mid viewport")
+	assert_true(scene.render_domain_viewports.has(RenderDomainScript.FAR), "Main scene should create a far viewport")
+	assert_true(scene.render_domain_cameras.has(RenderDomainScript.NEAR), "Main scene should create a near render camera")
+	assert_true(scene.render_domain_cameras.has(RenderDomainScript.MID), "Main scene should create a mid render camera")
+	assert_true(scene.render_domain_cameras.has(RenderDomainScript.FAR), "Main scene should create a far render camera")
+	assert_eq(scene.camera_rig.get_camera_node().cull_mask, 0, "Logical camera should remain current but not render directly")
+	assert_eq(scene.render_domain_cameras[RenderDomainScript.NEAR].cull_mask, RenderDomainScript.LAYER_NEAR, "Near camera should only render the near layer")
+	assert_eq(scene.render_domain_cameras[RenderDomainScript.MID].cull_mask, RenderDomainScript.LAYER_MID, "Mid camera should only render the mid layer")
+	assert_eq(scene.render_domain_cameras[RenderDomainScript.FAR].cull_mask, RenderDomainScript.LAYER_FAR, "Far camera should only render the far layer")
+
+func test_render_domain_cameras_follow_logical_camera_and_split_clip_ranges():
+	var scene := _spawn_main_scene()
+	await _wait_frames(2)
 
 	scene._start_focus_lock(scene.spacecraft_nodes[0])
-	scene._sync_camera_debug_panel()
+	scene._sync_render_domains()
 
-	assert_true(scene.camera_debug_label.text.contains("demo_probe"), "Camera debug panel should show locked spacecraft focus")
-	assert_true(scene.camera_debug_label.text.contains("render origin:"), "Camera debug panel should show render origin")
+	var logical_camera: Camera3D = scene.camera_rig.get_camera_node()
+	var near_camera: Camera3D = scene.render_domain_cameras[RenderDomainScript.NEAR]
+	var mid_camera: Camera3D = scene.render_domain_cameras[RenderDomainScript.MID]
+	var far_camera: Camera3D = scene.render_domain_cameras[RenderDomainScript.FAR]
 
-func test_camera_debug_sliders_live_adjust_camera_parameters():
-	var scene := _spawn_main_scene()
-	await _wait_frames(2)
-
-	var fov_slider: HSlider = scene.camera_debug_sliders["fov"]
-	var distance_slider: HSlider = scene.camera_debug_sliders["distance"]
-	var near_slider: HSlider = scene.camera_debug_sliders["near_ratio"]
-	var far_slider: HSlider = scene.camera_debug_sliders["far_multiplier"]
-
-	fov_slider.value = 55.0
-	distance_slider.value = 0.5
-	near_slider.value = 0.02
-	far_slider.value = 4.0
-
-	assert_eq(scene.camera_rig.fixed_fov_degrees, 55.0, "FOV slider should update camera FOV")
-	assert_almost_eq(scene.camera_rig.get_zoom_scalar(), 0.5, 0.000001, "Distance slider should update zoom scalar")
-	assert_almost_eq(
-		scene.camera_rig.near_clip_distance_ratio,
-		0.02,
-		0.00001,
-		"Near ratio slider should update camera near clip ratio"
-	)
-	assert_eq(scene.camera_rig.far_clip_distance_multiplier, 4.0, "Far multiplier slider should update camera far clip multiplier")
-	assert_eq(scene.camera_rig.get_camera_node().fov, 55.0, "FOV slider should apply to Camera3D")
-	assert_true(scene.camera_debug_label.text.contains("fov: 55.00 deg"), "Debug label should refresh after slider changes")
-	assert_true(scene.camera_debug_label.text.contains("zoom: 0.5000"), "Debug label should show updated zoom scalar")
+	assert_eq(near_camera.global_transform, logical_camera.global_transform, "Near camera should follow the logical camera transform")
+	assert_eq(mid_camera.global_transform, logical_camera.global_transform, "Mid camera should follow the logical camera transform")
+	assert_eq(far_camera.global_transform, logical_camera.global_transform, "Far camera should follow the logical camera transform")
+	assert_eq(near_camera.fov, logical_camera.fov, "Near camera should reuse the logical camera lens")
+	assert_eq(mid_camera.fov, logical_camera.fov, "Mid camera should reuse the logical camera lens")
+	assert_eq(far_camera.fov, logical_camera.fov, "Far camera should reuse the logical camera lens")
+	assert_lt(near_camera.near, mid_camera.near, "Near domain should keep the smallest near clip")
+	assert_lt(mid_camera.near, far_camera.near, "Far domain should push the near clip outward the most")
+	assert_lt(near_camera.far, mid_camera.far, "Mid domain should reach farther than the near domain")
+	assert_lt(mid_camera.far, far_camera.far, "Far domain should have the largest far clip")
 
 func test_spaceship_detail_zoom_uses_camera_floor_without_resizing():
 	var scene := _spawn_main_scene()

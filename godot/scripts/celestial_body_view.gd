@@ -3,6 +3,7 @@ class_name CelestialBodyView
 
 const BODY_OUTLINE_SHADER := preload("res://shaders/body_outline.gdshader")
 const BODY_SURFACE_SHADER := preload("res://shaders/body_surface.gdshader")
+const RenderDomainScript := preload("res://scripts/render_domain.gd")
 
 const BODY_COLLISION_LAYER := 1
 const MIN_OUTLINE_WIDTH := 0.01
@@ -31,6 +32,7 @@ var preferred_min_distance_km: float = 1.0
 var preferred_max_distance_km: float = 1.0
 var preferred_min_distance_units: float = 1.0
 var preferred_max_distance_units: float = 1.0
+var render_domain_hint: String = RenderDomainScript.MID
 var orbit_state: Dictionary = {}
 var rotation_state: Dictionary = {}
 
@@ -71,6 +73,7 @@ func configure(index: int, state: Dictionary, radius_units: float):
 	preferred_max_distance_km = float(state.get("preferred_max_distance_km", 1.0))
 	preferred_min_distance_units = preferred_min_distance_km * float(state.get("km_to_units", 1.0))
 	preferred_max_distance_units = preferred_max_distance_km * float(state.get("km_to_units", 1.0))
+	render_domain_hint = str(state.get("render_domain_hint", RenderDomainScript.MID))
 	orbit_state = state.get("orbit", {})
 	rotation_state = state.get("rotation", {})
 	_body_mesh_resource = _build_body_mesh(radius_units)
@@ -129,6 +132,12 @@ func get_prime_meridian_color() -> Color:
 		return Color.BLACK
 	return _surface_material.get_shader_parameter("meridian_color")
 
+func get_render_domain_hint() -> String:
+	return render_domain_hint
+
+func get_render_layer_mask() -> int:
+	return RenderDomainScript.to_layer_mask(render_domain_hint)
+
 func _refresh_visuals():
 	if not is_node_ready() or _body_mesh_resource == null:
 		return
@@ -136,6 +145,8 @@ func _refresh_visuals():
 	body_mesh.mesh = _body_mesh_resource
 	outline_mesh.mesh = _body_mesh_resource
 	outline_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body_mesh.layers = get_render_layer_mask()
+	outline_mesh.layers = get_render_layer_mask()
 
 	if _surface_material == null:
 		_surface_material = ShaderMaterial.new()

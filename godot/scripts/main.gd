@@ -6,17 +6,23 @@ const KM_TO_UNITS := AU_TO_UNITS / KM_PER_AU
 const BODY_VIEW_SCENE := preload("res://scenes/celestial_body_view.tscn")
 const ORBIT_LANE_SCRIPT := preload("res://scripts/orbit_lane_view.gd")
 const FOCUS_CONTROLLER_SCRIPT := preload("res://scripts/focus_controller.gd")
+const RenderDomainScript := preload("res://scripts/render_domain.gd")
 const BODY_COLLISION_MASK := 1
 const PICK_DISTANCE := 50000.0
 const CLICK_DRAG_THRESHOLD := 6.0
 const HOVER_HIGHLIGHT_COLOR := Color.WHITE
 const SELECTED_HIGHLIGHT_COLOR := Color(0.8, 0.8, 0.8, 1.0)
-const CAMERA_DEBUG_PANEL_SIZE := Vector2(390.0, 430.0)
-const CAMERA_DEBUG_PANEL_MARGIN := 12.0
-const CAMERA_DEBUG_SLIDER_FOV := "fov"
-const CAMERA_DEBUG_SLIDER_DISTANCE := "distance"
-const CAMERA_DEBUG_SLIDER_NEAR_RATIO := "near_ratio"
-const CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER := "far_multiplier"
+const RENDER_DOMAIN_NEAR_FAR_RATIO := 250.0
+const RENDER_DOMAIN_MID_FAR_RATIO := 2500.0
+const RENDER_DOMAIN_NEAR_NEAR_RATIO := 0.001
+const RENDER_DOMAIN_MID_NEAR_RATIO := 0.05
+const RENDER_DOMAIN_FAR_NEAR_RATIO := 25.0
+const RENDER_DOMAIN_NEAR_MIN_FAR := 10.0
+const RENDER_DOMAIN_MID_MIN_NEAR := 0.01
+const RENDER_DOMAIN_MID_MIN_FAR := 5000.0
+const RENDER_DOMAIN_FAR_MIN_NEAR := 25.0
+const RENDER_DOMAIN_FAR_MIN_FAR := 1000000.0
+const ORBIT_DOMAIN_FAR_THRESHOLD_UNITS := 500.0
 
 var bridge: SolarSystemBridge
 var focus_controller: FocusController
@@ -29,12 +35,10 @@ var selected_body_view = null
 var locked_body_view = null
 var spaceship_button_layer: CanvasLayer = null
 var spaceship_button: Button = null
-var camera_debug_layer: CanvasLayer = null
-var camera_debug_panel: PanelContainer = null
-var camera_debug_label: Label = null
-var camera_debug_sliders: Dictionary = {}
-var camera_debug_value_labels: Dictionary = {}
-var _syncing_camera_debug_controls: bool = false
+var render_composite_layer: CanvasLayer = null
+var render_domain_viewports := {}
+var render_domain_cameras := {}
+var render_domain_rects := {}
 var _left_click_pressed: bool = false
 var _left_click_dragging: bool = false
 var _left_click_press_position: Vector2 = Vector2.ZERO
@@ -57,9 +61,9 @@ func _ready():
 	_spawn_orbit_lanes()
 	_setup_light()
 	_setup_camera()
+	_setup_render_domains()
 	_setup_spaceship_button()
-	_setup_camera_debug_panel()
-	_sync_camera_debug_panel()
+	_sync_render_domains()
 
 func _spawn_bodies():
 	for i in range(bridge.get_body_count()):
@@ -88,23 +92,37 @@ func _spawn_focus_target_view(focus_index: int, state: Dictionary, parent: Node)
 
 func _spawn_orbit_lanes():
 	for body_view in body_nodes:
-		var state = bridge.get_body_state(body_view.body_index)
-		var orbit: Dictionary = state.get("orbit", {})
-		var central_body_index := int(orbit.get("central_body_index", -1))
-		if central_body_index < 0:
-			continue
-		if float(state.get("orbital_period_seconds", 0.0)) <= 0.0:
-			continue
-		if float(orbit.get("semi_major_axis_km", 0.0)) <= 0.0:
-			continue
+		_spawn_orbit_lane_for_state(body_view.body_index, bridge.get_body_state(body_view.body_index))
 
-		var orbit_lane = ORBIT_LANE_SCRIPT.new()
-		orbit_lanes_container.add_child(orbit_lane)
-		orbit_lane.configure(body_view.body_index, state, bridge.get_sim_time())
-		orbit_lane.update_center_position(_get_orbit_center_position(central_body_index))
-		orbit_lane_nodes[body_view.body_index] = orbit_lane
+	var body_count: int = bridge.get_body_count()
+	for spacecraft_index in range(spacecraft_nodes.size()):
+		_spawn_orbit_lane_for_state(
+			body_count + spacecraft_index,
+			bridge.get_spacecraft_state(spacecraft_index)
+		)
 
 	_refresh_orbit_lanes()
+
+func _spawn_orbit_lane_for_state(focus_index: int, state: Dictionary):
+	var orbit: Dictionary = state.get("orbit", {})
+	var central_body_index := int(orbit.get("central_body_index", -1))
+	if central_body_index < 0:
+		return
+	if float(state.get("orbital_period_seconds", 0.0)) <= 0.0:
+		return
+	if float(orbit.get("semi_major_axis_km", 0.0)) <= 0.0:
+		return
+
+	var orbit_lane = ORBIT_LANE_SCRIPT.new()
+	orbit_lanes_container.add_child(orbit_lane)
+	orbit_lane.configure(
+		focus_index,
+		state,
+		bridge.get_sim_time(),
+		_resolve_orbit_render_domain(state)
+	)
+	orbit_lane.update_center_position(_get_orbit_center_position(central_body_index))
+	orbit_lane_nodes[focus_index] = orbit_lane
 
 func _process(_delta):
 	if bridge == null or body_nodes.is_empty():
@@ -128,7 +146,7 @@ func _process(_delta):
 
 	_sync_orbit_lanes(sim_time_seconds)
 	_sync_focus_lock_target()
-	_sync_camera_debug_panel()
+	_sync_render_domains()
 	_queue_interaction_sync()
 
 func _input(event):
@@ -206,132 +224,105 @@ func _setup_spaceship_button():
 	spaceship_button.pressed.connect(_on_spaceship_button_pressed)
 	spaceship_button_layer.add_child(spaceship_button)
 
-func _setup_camera_debug_panel():
-	if camera_debug_layer != null:
+func _setup_render_domains():
+	if render_composite_layer != null or camera_rig == null:
 		return
 
-	camera_debug_layer = CanvasLayer.new()
-	camera_debug_layer.name = "CameraDebugLayer"
-	camera_debug_layer.layer = 20
-	add_child(camera_debug_layer)
+	var logical_camera: Camera3D = camera_rig.get_camera_node()
+	if logical_camera != null:
+		logical_camera.cull_mask = 0
 
-	camera_debug_panel = PanelContainer.new()
-	camera_debug_panel.name = "CameraDebugPanel"
-	camera_debug_panel.anchor_left = 1.0
-	camera_debug_panel.anchor_right = 1.0
-	camera_debug_panel.anchor_top = 1.0
-	camera_debug_panel.anchor_bottom = 1.0
-	camera_debug_panel.offset_left = -CAMERA_DEBUG_PANEL_SIZE.x - CAMERA_DEBUG_PANEL_MARGIN
-	camera_debug_panel.offset_right = -CAMERA_DEBUG_PANEL_MARGIN
-	camera_debug_panel.offset_top = -CAMERA_DEBUG_PANEL_SIZE.y - CAMERA_DEBUG_PANEL_MARGIN
-	camera_debug_panel.offset_bottom = -CAMERA_DEBUG_PANEL_MARGIN
-	camera_debug_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.02, 0.025, 0.035, 0.78)
-	panel_style.border_color = Color(0.45, 0.58, 0.68, 0.85)
-	panel_style.set_border_width_all(1)
-	panel_style.set_corner_radius_all(6)
-	camera_debug_panel.add_theme_stylebox_override("panel", panel_style)
-	camera_debug_layer.add_child(camera_debug_panel)
+	render_composite_layer = CanvasLayer.new()
+	render_composite_layer.name = "RenderCompositeLayer"
+	render_composite_layer.layer = -1
+	add_child(render_composite_layer)
 
-	var margin_container := MarginContainer.new()
-	margin_container.add_theme_constant_override("margin_left", 10)
-	margin_container.add_theme_constant_override("margin_top", 8)
-	margin_container.add_theme_constant_override("margin_right", 10)
-	margin_container.add_theme_constant_override("margin_bottom", 8)
-	camera_debug_panel.add_child(margin_container)
+	for domain_name in RenderDomainScript.all_domains():
+		var viewport := SubViewport.new()
+		viewport.name = "%sViewport" % domain_name.capitalize()
+		viewport.transparent_bg = true
+		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		viewport.msaa_3d = Viewport.MSAA_DISABLED
+		viewport.world_3d = get_viewport().world_3d
+		add_child(viewport)
 
-	var debug_layout := VBoxContainer.new()
-	debug_layout.name = "CameraDebugLayout"
-	debug_layout.add_theme_constant_override("separation", 6)
-	margin_container.add_child(debug_layout)
+		var domain_camera := Camera3D.new()
+		domain_camera.name = "%sCamera" % domain_name.capitalize()
+		domain_camera.current = true
+		domain_camera.cull_mask = RenderDomainScript.to_layer_mask(domain_name)
+		viewport.add_child(domain_camera)
 
-	camera_debug_label = Label.new()
-	camera_debug_label.name = "CameraDebugLabel"
-	camera_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	camera_debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	camera_debug_label.add_theme_font_size_override("font_size", 13)
-	camera_debug_label.add_theme_color_override("font_color", Color(0.82, 0.92, 1.0, 1.0))
-	debug_layout.add_child(camera_debug_label)
+		var texture_rect := TextureRect.new()
+		texture_rect.name = "%sDomainOutput" % domain_name.capitalize()
+		texture_rect.texture = viewport.get_texture()
+		texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		texture_rect.stretch_mode = TextureRect.STRETCH_SCALE
+		render_composite_layer.add_child(texture_rect)
 
-	_add_camera_debug_slider(
-		debug_layout,
-		CAMERA_DEBUG_SLIDER_FOV,
-		"FOV",
-		5.0,
-		120.0,
-		0.5
-	)
-	_add_camera_debug_slider(
-		debug_layout,
-		CAMERA_DEBUG_SLIDER_DISTANCE,
-		"Distance",
-		0.0,
-		1.0,
-		0.001
-	)
-	_add_camera_debug_slider(
-		debug_layout,
-		CAMERA_DEBUG_SLIDER_NEAR_RATIO,
-		"Near ratio",
-		0.000001,
-		0.1,
-		0.0001
-	)
-	_add_camera_debug_slider(
-		debug_layout,
-		CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER,
-		"Far multiplier",
-		1.01,
-		20.0,
-		0.01
-	)
+		render_domain_viewports[domain_name] = viewport
+		render_domain_cameras[domain_name] = domain_camera
+		render_domain_rects[domain_name] = texture_rect
 
-func _add_camera_debug_slider(
-	parent: Container,
-	control_id: String,
-	title: String,
-	min_value: float,
-	max_value: float,
-	step_value: float
-):
-	var control_layout := VBoxContainer.new()
-	control_layout.name = "%sControl" % control_id.capitalize().replace(" ", "")
-	control_layout.add_theme_constant_override("separation", 1)
-	parent.add_child(control_layout)
+func _sync_render_domains():
+	if camera_rig == null or render_domain_cameras.is_empty():
+		return
 
-	var label_row := HBoxContainer.new()
-	control_layout.add_child(label_row)
+	var logical_camera: Camera3D = camera_rig.get_camera_node()
+	if logical_camera == null:
+		return
 
-	var title_label := Label.new()
-	title_label.text = title
-	title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_label.add_theme_font_size_override("font_size", 12)
-	title_label.add_theme_color_override("font_color", Color(0.72, 0.84, 0.92, 1.0))
-	label_row.add_child(title_label)
+	_sync_render_domain_viewport_sizes()
 
-	var value_label := Label.new()
-	value_label.name = "%sValue" % control_id.capitalize().replace(" ", "")
-	value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	value_label.custom_minimum_size = Vector2(104.0, 0.0)
-	value_label.add_theme_font_size_override("font_size", 12)
-	value_label.add_theme_color_override("font_color", Color(0.88, 0.95, 1.0, 1.0))
-	label_row.add_child(value_label)
+	for domain_name in render_domain_cameras.keys():
+		var domain_camera: Camera3D = render_domain_cameras[domain_name]
+		var clip_state: Dictionary = _build_render_domain_clip_state(domain_name)
+		domain_camera.global_transform = logical_camera.global_transform
+		domain_camera.projection = logical_camera.projection
+		domain_camera.keep_aspect = logical_camera.keep_aspect
+		domain_camera.fov = logical_camera.fov
+		domain_camera.near = clip_state["near"]
+		domain_camera.far = clip_state["far"]
 
-	var slider := HSlider.new()
-	slider.name = "%sSlider" % control_id.capitalize().replace(" ", "")
-	slider.min_value = min_value
-	slider.max_value = max_value
-	slider.step = step_value
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.focus_mode = Control.FOCUS_NONE
-	slider.value_changed.connect(_on_camera_debug_slider_changed.bind(control_id))
-	control_layout.add_child(slider)
+func _sync_render_domain_viewport_sizes():
+	var viewport_size: Vector2i = Vector2i(get_viewport().get_visible_rect().size)
+	for domain_name in render_domain_viewports.keys():
+		var domain_viewport: SubViewport = render_domain_viewports[domain_name]
+		if domain_viewport.size != viewport_size:
+			domain_viewport.size = viewport_size
 
-	camera_debug_sliders[control_id] = slider
-	camera_debug_value_labels[control_id] = value_label
+func _build_render_domain_clip_state(domain_name: String) -> Dictionary:
+	var focus_distance: float = camera_rig.current_distance if camera_rig != null else 1.0
+	var safe_distance: float = max(focus_distance, CosmosCameraRig.MIN_ZOOM_DISTANCE)
+
+	match domain_name:
+		RenderDomainScript.NEAR:
+			return {
+				"near": max(camera_rig.min_near_clip, safe_distance * RENDER_DOMAIN_NEAR_NEAR_RATIO),
+				"far": max(RENDER_DOMAIN_NEAR_MIN_FAR, safe_distance * RENDER_DOMAIN_NEAR_FAR_RATIO),
+			}
+		RenderDomainScript.FAR:
+			return {
+				"near": max(RENDER_DOMAIN_FAR_MIN_NEAR, safe_distance * RENDER_DOMAIN_FAR_NEAR_RATIO),
+				"far": max(RENDER_DOMAIN_FAR_MIN_FAR, camera_rig.max_distance * 2.0),
+			}
+		_:
+			return {
+				"near": max(RENDER_DOMAIN_MID_MIN_NEAR, safe_distance * RENDER_DOMAIN_MID_NEAR_RATIO),
+				"far": max(RENDER_DOMAIN_MID_MIN_FAR, safe_distance * RENDER_DOMAIN_MID_FAR_RATIO),
+			}
+
+func _resolve_orbit_render_domain(state: Dictionary) -> String:
+	var focus_type := str(state.get("focus_type", ""))
+	if focus_type == "spacecraft":
+		return RenderDomainScript.NEAR
+
+	var orbit: Dictionary = state.get("orbit", {})
+	var semi_major_axis_units: float = float(orbit.get("semi_major_axis_km", 0.0)) * KM_TO_UNITS
+	if semi_major_axis_units >= ORBIT_DOMAIN_FAR_THRESHOLD_UNITS:
+		return RenderDomainScript.FAR
+	return RenderDomainScript.MID
 
 func _on_spaceship_button_pressed():
 	_activate_spaceship_button(false)
@@ -536,143 +527,3 @@ func _set_render_origin(new_render_origin: Vector3):
 
 	if camera_rig != null:
 		camera_rig.apply_render_origin_shift(origin_delta)
-
-func _sync_camera_debug_panel():
-	if camera_debug_label == null or camera_rig == null:
-		return
-
-	var camera_state: Dictionary = camera_rig.get_camera_state()
-	camera_debug_label.text = _build_camera_debug_text(camera_state)
-	_sync_camera_debug_control_values(camera_state)
-
-func _build_camera_debug_text(camera_state: Dictionary = {}) -> String:
-	if camera_state.is_empty() and camera_rig != null:
-		camera_state = camera_rig.get_camera_state()
-	var camera: Camera3D = camera_rig.get_camera_node()
-	var focus_name := "none"
-	if locked_body_view != null:
-		focus_name = locked_body_view.body_label
-	elif selected_body_view != null:
-		focus_name = selected_body_view.body_label
-	elif hovered_body_view != null:
-		focus_name = hovered_body_view.body_label
-
-	var spacecraft_rendered := false
-	for spacecraft_view in spacecraft_nodes:
-		if spacecraft_view.body_mesh.mesh != null:
-			spacecraft_rendered = true
-			break
-
-	return "\n".join([
-		"Camera View",
-		"projection: %s  fov: %.2f deg" % [
-			str(camera_state.get("projection", "unknown")),
-			float(camera_state.get("effective_fov", 0.0)),
-		],
-		"focus: %s (%s/%s)" % [
-			focus_name,
-			str(camera_state.get("current_focus_id", "")),
-			str(camera_state.get("current_focus_type", "")),
-		],
-		"locked: %s  zoom: %.4f" % [
-			str(camera_rig.is_focus_lock_active()),
-			float(camera_state.get("zoom_scalar", 0.0)),
-		],
-		"distance: %s -> %s" % [
-			_format_debug_float(float(camera_state.get("focus_distance", 0.0))),
-			_format_debug_float(float(camera_state.get("target_focus_distance", 0.0))),
-		],
-		"bounds: %s .. %s" % [
-			_format_debug_float(float(camera_state.get("min_focus_distance", 0.0))),
-			_format_debug_float(float(camera_state.get("max_focus_distance", 0.0))),
-		],
-		"clip: near %s  far %s" % [
-			_format_debug_float(float(camera_state.get("near_clip", 0.0))),
-			_format_debug_float(float(camera_state.get("far_clip", 0.0))),
-		],
-		"yaw/pitch: %.2f / %.2f" % [
-			float(camera_state.get("yaw", 0.0)),
-			float(camera_state.get("pitch", 0.0)),
-		],
-		"camera local: %s" % _format_debug_vector(camera.position if camera != null else Vector3.ZERO),
-		"render origin: %s" % _format_debug_vector(render_origin_position),
-		"small objects: %s (%d spacecraft)" % [
-			"rendered" if spacecraft_rendered else "not rendered",
-			spacecraft_nodes.size(),
-		],
-	])
-
-func _format_debug_float(value: float) -> String:
-	var abs_value := absf(value)
-	if is_zero_approx(value):
-		return "0"
-	if abs_value >= 1000000000.0:
-		return "%.3fG" % (value / 1000000000.0)
-	if abs_value >= 1000000.0:
-		return "%.3fM" % (value / 1000000.0)
-	if abs_value >= 10000.0:
-		return "%.3fk" % (value / 1000.0)
-	if abs_value < 0.001:
-		return "%.9f" % value
-	return "%.6f" % value
-
-func _format_debug_vector(value: Vector3) -> String:
-	return "(%s, %s, %s)" % [
-		_format_debug_float(value.x),
-		_format_debug_float(value.y),
-		_format_debug_float(value.z),
-	]
-
-func _sync_camera_debug_control_values(camera_state: Dictionary):
-	if camera_debug_sliders.is_empty() or camera_rig == null:
-		return
-
-	_syncing_camera_debug_controls = true
-	_set_camera_debug_slider_value(
-		CAMERA_DEBUG_SLIDER_FOV,
-		float(camera_state.get("effective_fov", camera_rig.fixed_fov_degrees)),
-		"%.1f deg" % camera_rig.fixed_fov_degrees
-	)
-	_set_camera_debug_slider_value(
-		CAMERA_DEBUG_SLIDER_DISTANCE,
-		float(camera_state.get("zoom_scalar", camera_rig.get_zoom_scalar())),
-		_format_debug_float(float(camera_state.get("target_focus_distance", camera_rig.target_distance)))
-	)
-	_set_camera_debug_slider_value(
-		CAMERA_DEBUG_SLIDER_NEAR_RATIO,
-		camera_rig.near_clip_distance_ratio,
-		"%.6f" % camera_rig.near_clip_distance_ratio
-	)
-	_set_camera_debug_slider_value(
-		CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER,
-		camera_rig.far_clip_distance_multiplier,
-		"%.2fx" % camera_rig.far_clip_distance_multiplier
-	)
-	_syncing_camera_debug_controls = false
-
-func _set_camera_debug_slider_value(control_id: String, value: float, display_text: String):
-	var slider: HSlider = camera_debug_sliders.get(control_id)
-	if slider != null and not is_equal_approx(slider.value, value):
-		slider.value = value
-
-	var value_label: Label = camera_debug_value_labels.get(control_id)
-	if value_label != null:
-		value_label.text = display_text
-
-func _on_camera_debug_slider_changed(value: float, control_id: String):
-	if _syncing_camera_debug_controls or camera_rig == null:
-		return
-
-	match control_id:
-		CAMERA_DEBUG_SLIDER_FOV:
-			camera_rig.set_fixed_fov_degrees(value)
-		CAMERA_DEBUG_SLIDER_DISTANCE:
-			camera_rig.set_zoom_scalar(value)
-		CAMERA_DEBUG_SLIDER_NEAR_RATIO:
-			camera_rig.set_near_clip_distance_ratio(value)
-		CAMERA_DEBUG_SLIDER_FAR_MULTIPLIER:
-			camera_rig.set_far_clip_distance_multiplier(value)
-
-	_sync_orbit_markers()
-	_sync_body_labels()
-	_sync_camera_debug_panel()

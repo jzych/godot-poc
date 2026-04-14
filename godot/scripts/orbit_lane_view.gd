@@ -2,6 +2,7 @@ extends MeshInstance3D
 class_name OrbitLaneView
 
 const OrbitMathScript := preload("res://scripts/orbit_math.gd")
+const RenderDomainScript := preload("res://scripts/render_domain.gd")
 
 const DEFAULT_SAMPLE_COUNT := 128
 const UNSELECTED_FADE_START := Color(0.22, 0.22, 0.24, 0.52)
@@ -14,6 +15,7 @@ var central_body_index: int = -1
 var orbital_period_seconds: float = 0.0
 var orbit_state: Dictionary = {}
 var sample_count: int = DEFAULT_SAMPLE_COUNT
+var render_domain_hint: String = RenderDomainScript.MID
 
 var _material: StandardMaterial3D = null
 var _sample_positions := PackedVector3Array()
@@ -30,12 +32,14 @@ func _ready():
 		_material.albedo_color = Color.WHITE
 	material_override = _material
 
-func configure(index: int, state: Dictionary, sim_time_seconds: float):
+func configure(index: int, state: Dictionary, sim_time_seconds: float, domain_hint: String = RenderDomainScript.MID):
 	body_index = index
 	orbit_state = state.get("orbit", {})
 	orbital_period_seconds = float(state.get("orbital_period_seconds", 0.0))
 	central_body_index = int(orbit_state.get("central_body_index", -1))
 	sample_count = OrbitMathScript.recommended_sample_count(orbit_state)
+	render_domain_hint = domain_hint
+	layers = RenderDomainScript.to_layer_mask(render_domain_hint)
 	_refresh_sample_positions(sim_time_seconds)
 	_rebuild_mesh()
 
@@ -62,6 +66,9 @@ func get_sample_colors() -> PackedColorArray:
 func is_selected_lane() -> bool:
 	return _selected
 
+func get_render_domain_hint() -> String:
+	return render_domain_hint
+
 func _rebuild_mesh():
 	if _sample_positions.is_empty():
 		mesh = null
@@ -77,6 +84,7 @@ func _rebuild_mesh():
 	var orbit_mesh: ArrayMesh = ArrayMesh.new()
 	orbit_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINE_STRIP, arrays)
 	mesh = orbit_mesh
+	custom_aabb = _build_custom_aabb()
 
 func _build_sample_colors() -> PackedColorArray:
 	var colors: PackedColorArray = PackedColorArray()
@@ -99,3 +107,16 @@ func _refresh_sample_positions(sim_time_seconds: float):
 		sample_count,
 		sim_time_seconds
 	)
+
+func _build_custom_aabb() -> AABB:
+	if _sample_positions.is_empty():
+		return AABB()
+
+	var min_point: Vector3 = _sample_positions[0]
+	var max_point: Vector3 = _sample_positions[0]
+	for sample_position in _sample_positions:
+		min_point = min_point.min(sample_position)
+		max_point = max_point.max(sample_position)
+
+	var padding := Vector3.ONE * 0.5
+	return AABB(min_point - padding, (max_point - min_point) + (padding * 2.0))

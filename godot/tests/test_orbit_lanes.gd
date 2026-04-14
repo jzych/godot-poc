@@ -2,6 +2,7 @@ extends GutTest
 
 const MAIN_SCENE := preload("res://scenes/main.tscn")
 const OrbitMathScript := preload("res://scripts/orbit_math.gd")
+const RenderDomainScript := preload("res://scripts/render_domain.gd")
 
 func _spawn_main_scene() -> Node3D:
 	var scene: Node3D = MAIN_SCENE.instantiate()
@@ -25,13 +26,17 @@ func _click_at(scene, position: Vector2):
 	scene._input(_mouse_button_event(MOUSE_BUTTON_LEFT, true, position))
 	scene._input(_mouse_button_event(MOUSE_BUTTON_LEFT, false, position))
 
-func test_orbit_lanes_exist_only_for_orbiting_bodies():
+func test_orbit_lanes_exist_for_orbiting_bodies_and_spacecraft():
 	var scene = _spawn_main_scene()
 	await _wait_frames(2)
 
 	assert_null(scene.get_orbit_lane_for_body_index(0), "Sun should not have an orbit lane")
 	assert_not_null(scene.get_orbit_lane_for_body_index(1), "Earth should have an orbit lane")
 	assert_not_null(scene.get_orbit_lane_for_body_index(2), "Moon should have an orbit lane")
+	assert_not_null(
+		scene.get_orbit_lane_for_body_index(scene.bridge.get_body_count()),
+		"Spacecraft should have an orbit lane"
+	)
 
 func test_selected_orbit_lane_becomes_brighter_and_opaque_but_stays_faded():
 	var scene = _spawn_main_scene()
@@ -128,3 +133,18 @@ func test_moon_orbit_lane_follows_earth_position():
 
 	assert_eq(moon_lane.position, earth.position, "Moon orbit lane should stay centered on the moving Earth")
 	assert_ne(moon_lane.position, initial_center, "Moon orbit lane center should update as Earth moves")
+
+func test_orbit_lanes_split_into_render_domains_by_scale():
+	var scene = _spawn_main_scene()
+	await _wait_frames(2)
+
+	var earth_lane = scene.get_orbit_lane_for_body_index(1)
+	var moon_lane = scene.get_orbit_lane_for_body_index(2)
+	var spacecraft_lane = scene.get_orbit_lane_for_body_index(scene.bridge.get_body_count())
+
+	assert_eq(earth_lane.get_render_domain_hint(), RenderDomainScript.FAR, "Large planetary orbits should render in the far domain")
+	assert_eq(moon_lane.get_render_domain_hint(), RenderDomainScript.MID, "Local moon orbits should render in the mid domain")
+	assert_eq(spacecraft_lane.get_render_domain_hint(), RenderDomainScript.NEAR, "Spacecraft local orbits should render in the near domain")
+	assert_eq(earth_lane.layers, RenderDomainScript.LAYER_FAR, "Far-domain orbit lanes should use the far visibility layer")
+	assert_eq(moon_lane.layers, RenderDomainScript.LAYER_MID, "Mid-domain orbit lanes should use the mid visibility layer")
+	assert_eq(spacecraft_lane.layers, RenderDomainScript.LAYER_NEAR, "Near-domain orbit lanes should use the near visibility layer")
