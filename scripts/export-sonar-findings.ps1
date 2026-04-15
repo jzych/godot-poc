@@ -2,7 +2,9 @@ param(
     [string]$ProjectKey = "",
     [string]$Branch = "",
     [string]$OutputPath = "",
-    [string]$SonarBaseUrl = "https://sonarcloud.io"
+    [string]$SonarBaseUrl = "https://sonarcloud.io",
+    [switch]$IncludeMain,
+    [string]$MainBranch = "main"
 )
 
 Set-StrictMode -Version Latest
@@ -103,6 +105,12 @@ function Get-AnalysisTarget {
         }
     }
 
+    return New-BranchAnalysisTarget -BranchName $BranchName
+}
+
+function New-BranchAnalysisTarget {
+    param([string]$BranchName)
+
     return @{
         Label = "Branch"
         Value = $BranchName
@@ -137,6 +145,30 @@ function Get-SonarIssues {
     } while ($allIssues.Count -lt $response.paging.total)
 
     return $allIssues
+}
+
+function Get-SonarIssueCount {
+    param([string]$BaseUrl)
+
+    $separator = "?"
+    if ($BaseUrl.Contains("?")) {
+        $separator = "&"
+    }
+
+    $countUrl = "{0}{1}ps=1&p=1" -f $BaseUrl, $separator
+    $responseJson = Invoke-SonarApi -Url $countUrl -AllowNotFound
+    if ($null -eq $responseJson) {
+        return $null
+    }
+
+    $response = $responseJson | ConvertFrom-Json
+    $paging = Get-PropertyValue -Object $response -PropertyName "paging"
+    $total = Get-PropertyValue -Object $paging -PropertyName "total"
+    if ($null -eq $total) {
+        return $null
+    }
+
+    return [int]$total
 }
 
 function Get-PropertyValue {
@@ -289,6 +321,96 @@ function Add-IssueBreakdownLines {
     return $MarkdownLines
 }
 
+function Get-IssuesUrl {
+    param(
+        [string]$SonarBaseUrl,
+        [string]$ProjectKey,
+        [hashtable]$AnalysisTarget
+    )
+
+    return "{0}/api/issues/search?componentKeys={1}&{2}&resolved=false" -f `
+        $SonarBaseUrl,
+        [System.Uri]::EscapeDataString($ProjectKey),
+        $AnalysisTarget.QueryParameters
+}
+
+function Get-SonarSummary {
+    param(
+        [string]$SonarBaseUrl,
+        [string]$ProjectKey,
+        [hashtable]$AnalysisTarget
+    )
+
+    $issuesUrl = Get-IssuesUrl -SonarBaseUrl $SonarBaseUrl -ProjectKey $ProjectKey -AnalysisTarget $AnalysisTarget
+
+    return @{
+        Target = $AnalysisTarget
+        Measures = Get-SonarMeasures -SonarBaseUrl $SonarBaseUrl -ProjectKey $ProjectKey -AnalysisTarget $AnalysisTarget
+        QualityGate = Get-SonarQualityGate -SonarBaseUrl $SonarBaseUrl -ProjectKey $ProjectKey -AnalysisTarget $AnalysisTarget
+        IssueCount = Get-SonarIssueCount -BaseUrl $issuesUrl
+        IssuesUrl = $issuesUrl
+    }
+}
+
+function Add-BranchSummaryLines {
+    param(
+        [string[]]$MarkdownLines,
+        [string]$Heading,
+        [hashtable]$Summary
+    )
+
+    $qualityGate = $Summary.QualityGate
+    $measures = $Summary.Measures
+    $issueCount = $Summary.IssueCount
+
+    $MarkdownLines += $Heading
+    $MarkdownLines += "- Branch: $($Summary.Target.Branch)"
+    $MarkdownLines += "- Coverage: $(Format-MeasureValue -Measures $measures -MetricKey 'coverage')"
+    $MarkdownLines += "- Open issues: $(Get-OptionalValue $issueCount)"
+    $MarkdownLines += "- Quality gate: $(Get-OptionalValue (Get-PropertyValue -Object $qualityGate -PropertyName 'status'))"
+
+    if ($null -eq $qualityGate -and $measures.Count -eq 0) {
+        $MarkdownLines += "- Analysis summary: SonarCloud has not published coverage or quality-gate metrics for this branch yet."
+    }
+
+    $MarkdownLines += ""
+    return $MarkdownLines
+}
+
+function Add-IssueDetailsLines {
+    param(
+        [string[]]$MarkdownLines,
+        [string]$Heading,
+        [object[]]$Issues
+    )
+
+    $MarkdownLines += $Heading
+
+    if ($Issues.Count -gt 0) {
+        $MarkdownLines = Add-IssueBreakdownLines -MarkdownLines $MarkdownLines -Heading "### Issue Types" -Groups ($Issues | Group-Object type)
+        $MarkdownLines = Add-IssueBreakdownLines -MarkdownLines $MarkdownLines -Heading "### Issue Severities" -Groups ($Issues | Group-Object severity)
+    }
+
+    if ($Issues.Count -eq 0) {
+        $MarkdownLines += "No open SonarCloud issues were found for this target."
+        $MarkdownLines += ""
+        return $MarkdownLines
+    }
+
+    foreach ($issue in $Issues) {
+        $MarkdownLines += "### [$(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'severity'))] $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'rule'))"
+        $MarkdownLines += "- File: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'component'))"
+        $MarkdownLines += "- Line: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'line'))"
+        $MarkdownLines += "- Message: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'message'))"
+        $MarkdownLines += "- Type: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'type'))"
+        $MarkdownLines += "- Status: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'status'))"
+        $MarkdownLines += "- Issue key: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'key'))"
+        $MarkdownLines += ""
+    }
+
+    return $MarkdownLines
+}
+
 $repositoryRoot = Get-RepositoryRoot
 $resolvedBranch = $Branch
 if ([string]::IsNullOrWhiteSpace($resolvedBranch)) {
@@ -305,39 +427,60 @@ if ([string]::IsNullOrWhiteSpace($resolvedOutputPath)) {
 }
 
 $resolvedProjectKey = Resolve-ProjectKey -RepoRoot $repositoryRoot -ProvidedProjectKey $ProjectKey
+
+$currentBranchTarget = New-BranchAnalysisTarget -BranchName $resolvedBranch
+$currentBranchSummary = Get-SonarSummary -SonarBaseUrl $SonarBaseUrl -ProjectKey $resolvedProjectKey -AnalysisTarget $currentBranchTarget
+$mainBranchSummary = $null
+$mainBranchIssues = @()
+if ($IncludeMain -and $resolvedBranch -ne $MainBranch) {
+    $mainBranchTarget = New-BranchAnalysisTarget -BranchName $MainBranch
+    $mainBranchSummary = Get-SonarSummary -SonarBaseUrl $SonarBaseUrl -ProjectKey $resolvedProjectKey -AnalysisTarget $mainBranchTarget
+    $mainBranchIssues = @(Get-SonarIssues -BaseUrl $mainBranchSummary.IssuesUrl)
+}
+
 $analysisTarget = Get-AnalysisTarget -SonarBaseUrl $SonarBaseUrl -ProjectKey $resolvedProjectKey -BranchName $resolvedBranch
 $analysisTargetLabel = [string]$analysisTarget.Label
 $analysisTargetValue = [string]$analysisTarget.Value
-$issuesUrl = "{0}/api/issues/search?componentKeys={1}&{2}&resolved=false" -f `
-    $SonarBaseUrl,
-    [System.Uri]::EscapeDataString($resolvedProjectKey),
-    $analysisTarget.QueryParameters
-
-$measures = Get-SonarMeasures -SonarBaseUrl $SonarBaseUrl -ProjectKey $resolvedProjectKey -AnalysisTarget $analysisTarget
-$qualityGate = Get-SonarQualityGate -SonarBaseUrl $SonarBaseUrl -ProjectKey $resolvedProjectKey -AnalysisTarget $analysisTarget
+$analysisSummary = Get-SonarSummary -SonarBaseUrl $SonarBaseUrl -ProjectKey $resolvedProjectKey -AnalysisTarget $analysisTarget
+$issuesUrl = $analysisSummary.IssuesUrl
+$measures = $analysisSummary.Measures
+$qualityGate = $analysisSummary.QualityGate
 $issues = @(Get-SonarIssues -BaseUrl $issuesUrl)
 
 $markdownLines = @(
     "# SonarCloud Findings",
     "",
     "Project: $resolvedProjectKey",
-    "{0}: {1}" -f $analysisTargetLabel, $analysisTargetValue
+    "Generated: $(Get-Date -Format s)",
+    ""
 )
 
-if ($analysisTargetLabel -ne "Branch") {
-    $markdownLines += "Branch: $resolvedBranch"
+$markdownLines = Add-BranchSummaryLines -MarkdownLines $markdownLines -Heading "## Current Branch Summary" -Summary $currentBranchSummary
+if ($null -ne $mainBranchSummary) {
+    $markdownLines = Add-BranchSummaryLines -MarkdownLines $markdownLines -Heading "## Main Branch Summary" -Summary $mainBranchSummary
 }
 
 $markdownLines += @(
-    "Generated: $(Get-Date -Format s)",
-    "Quality gate: $(Get-OptionalValue (Get-PropertyValue -Object $qualityGate -PropertyName 'status'))",
-    "Coverage: $(Format-MeasureValue -Measures $measures -MetricKey 'coverage')",
-    "New coverage: $(Format-MeasureValue -Measures $measures -MetricKey 'new_coverage')",
-    "Bugs: $(Format-MeasureValue -Measures $measures -MetricKey 'bugs')",
-    "Vulnerabilities: $(Format-MeasureValue -Measures $measures -MetricKey 'vulnerabilities')",
-    "Code smells: $(Format-MeasureValue -Measures $measures -MetricKey 'code_smells')",
-    "Security hotspots: $(Format-MeasureValue -Measures $measures -MetricKey 'security_hotspots')",
-    "Total issues: $($issues.Count)",
+    "## Detailed Findings Target"
+)
+
+$markdownLines += "- {0}: {1}" -f $analysisTargetLabel, $analysisTargetValue
+
+if ($analysisTargetLabel -ne "Branch") {
+    $markdownLines += "- Branch: $resolvedBranch"
+}
+
+$markdownLines += @(
+    "",
+    "## Detailed Findings Summary",
+    "- Quality gate: $(Get-OptionalValue (Get-PropertyValue -Object $qualityGate -PropertyName 'status'))",
+    "- Coverage: $(Format-MeasureValue -Measures $measures -MetricKey 'coverage')",
+    "- New coverage: $(Format-MeasureValue -Measures $measures -MetricKey 'new_coverage')",
+    "- Bugs: $(Format-MeasureValue -Measures $measures -MetricKey 'bugs')",
+    "- Vulnerabilities: $(Format-MeasureValue -Measures $measures -MetricKey 'vulnerabilities')",
+    "- Code smells: $(Format-MeasureValue -Measures $measures -MetricKey 'code_smells')",
+    "- Security hotspots: $(Format-MeasureValue -Measures $measures -MetricKey 'security_hotspots')",
+    "- Total issues: $($issues.Count)",
     ""
 )
 
@@ -358,27 +501,11 @@ if ($null -ne $qualityGate -and @($qualityGate.conditions).Count -gt 0) {
     $markdownLines += ""
 }
 
-if ($issues.Count -gt 0) {
-    $markdownLines = Add-IssueBreakdownLines -MarkdownLines $markdownLines -Heading "## Issue Types" -Groups ($issues | Group-Object type)
-    $markdownLines = Add-IssueBreakdownLines -MarkdownLines $markdownLines -Heading "## Issue Severities" -Groups ($issues | Group-Object severity)
+if ($null -ne $mainBranchSummary) {
+    $markdownLines = Add-IssueDetailsLines -MarkdownLines $markdownLines -Heading "## Main Branch Issue Details" -Issues $mainBranchIssues
 }
 
-if ($issues.Count -eq 0) {
-    $markdownLines += "No open SonarCloud issues were found for this target."
-    $markdownLines += ""
-}
-else {
-    foreach ($issue in $issues) {
-        $markdownLines += "## [$(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'severity'))] $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'rule'))"
-        $markdownLines += "- File: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'component'))"
-        $markdownLines += "- Line: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'line'))"
-        $markdownLines += "- Message: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'message'))"
-        $markdownLines += "- Type: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'type'))"
-        $markdownLines += "- Status: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'status'))"
-        $markdownLines += "- Issue key: $(Get-OptionalValue (Get-PropertyValue -Object $issue -PropertyName 'key'))"
-        $markdownLines += ""
-    }
-}
+$markdownLines = Add-IssueDetailsLines -MarkdownLines $markdownLines -Heading "## Detailed Findings Issues" -Issues $issues
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllLines($resolvedOutputPath, $markdownLines, $utf8NoBom)

@@ -13,28 +13,32 @@ namespace solar {
 namespace {
 
 const char* anomaly_kind_name(OrbitalAnomalyKind kind) {
+    using enum OrbitalAnomalyKind;
+
     switch (kind) {
-    case OrbitalAnomalyKind::MeanAnomaly:
+    case MeanAnomaly:
         return "mean_anomaly";
-    case OrbitalAnomalyKind::TrueAnomaly:
+    case TrueAnomaly:
         return "true_anomaly";
-    case OrbitalAnomalyKind::TimeOfPeriapsisPassage:
+    case TimeOfPeriapsisPassage:
         return "time_of_periapsis_passage";
-    case OrbitalAnomalyKind::None:
+    case None:
     default:
         return "none";
     }
 }
 
 const char* focus_target_type_name(FocusTargetType type) {
+    using enum FocusTargetType;
+
     switch (type) {
-    case FocusTargetType::Star:
+    case Star:
         return "star";
-    case FocusTargetType::Planet:
+    case Planet:
         return "planet";
-    case FocusTargetType::Moon:
+    case Moon:
         return "moon";
-    case FocusTargetType::Spacecraft:
+    case Spacecraft:
         return "spacecraft";
     default:
         return "unknown";
@@ -51,9 +55,9 @@ godot::Dictionary vec3_to_dictionary(const Vec3& vector) {
 
 godot::Vector3 vec3_to_units(const Vec3& vector, double scale) {
     return godot::Vector3(
-        vector.x * scale,
-        vector.y * scale,
-        vector.z * scale);
+        static_cast<godot::real_t>(vector.x * scale),
+        static_cast<godot::real_t>(vector.y * scale),
+        static_cast<godot::real_t>(vector.z * scale));
 }
 
 godot::Dictionary make_focus_metadata(

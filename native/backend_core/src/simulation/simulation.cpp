@@ -100,17 +100,19 @@ double true_to_mean_anomaly(double true_anomaly_rad, double eccentricity) {
 
 double mean_anomaly_at_time(const MassiveBody& body, double sim_time_s) {
     const double omega = mean_motion_rad_per_s(body);
+    using enum OrbitalAnomalyKind;
+
     switch (body.orbit.anomaly_kind) {
-    case OrbitalAnomalyKind::MeanAnomaly:
+    case MeanAnomaly:
         return body.orbit.anomaly_at_epoch + (omega * sim_time_s);
-    case OrbitalAnomalyKind::TrueAnomaly:
+    case TrueAnomaly:
         return true_to_mean_anomaly(
             body.orbit.anomaly_at_epoch,
             body.orbit.eccentricity) +
                (omega * sim_time_s);
-    case OrbitalAnomalyKind::TimeOfPeriapsisPassage:
+    case TimeOfPeriapsisPassage:
         return omega * (sim_time_s - body.orbit.anomaly_at_epoch);
-    case OrbitalAnomalyKind::None:
+    case None:
     default:
         return omega * sim_time_s;
     }
@@ -122,10 +124,11 @@ double solve_eccentric_anomaly(double mean_anomaly_rad, double eccentricity) {
     }
 
     const double normalized_mean_anomaly = normalize_angle(mean_anomaly_rad);
-    double eccentric_anomaly =
-        eccentricity < 0.8
-            ? normalized_mean_anomaly
-            : (normalized_mean_anomaly >= 0.0 ? std::numbers::pi : -std::numbers::pi);
+    double eccentric_anomaly = normalized_mean_anomaly;
+    if (eccentricity >= 0.8) {
+        eccentric_anomaly =
+            normalized_mean_anomaly >= 0.0 ? std::numbers::pi : -std::numbers::pi;
+    }
 
     for (int iteration = 0; iteration < MAX_KEPLER_ITERATIONS; ++iteration) {
         const double sin_e = std::sin(eccentric_anomaly);
