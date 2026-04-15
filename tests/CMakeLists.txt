@@ -90,18 +90,20 @@ if(GODOT_EXECUTABLE)
     add_test(
         NAME godot_bridge_smoke
         COMMAND ${GODOT_EXECUTABLE}
+            --path ${CMAKE_SOURCE_DIR}/godot
             --headless
             --display-driver headless
             --audio-driver Dummy
             --import
             --quit
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )
 
     # Run GUT after import
     add_test(
         NAME godot_gut_tests
         COMMAND ${GODOT_EXECUTABLE}
+            --path ${CMAKE_SOURCE_DIR}/godot
             --headless
             --display-driver headless
             --audio-driver Dummy
@@ -109,7 +111,7 @@ if(GODOT_EXECUTABLE)
             -gdir=res://tests
             -ginclude_subdirs
             -gexit
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )
 
     set_tests_properties(godot_bridge_smoke PROPERTIES
