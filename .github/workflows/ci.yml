@@ -118,5 +118,7 @@ jobs:
             -Dsonar.coverageReportPaths=sonar-coverage.xml
             -Dsonar.javascript.file.suffixes=-
             -Dsonar.typescript.file.suffixes=-
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=600
         env:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
