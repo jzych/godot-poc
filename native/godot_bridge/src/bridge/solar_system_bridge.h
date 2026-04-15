@@ -20,6 +20,10 @@ public:
     bool is_simulation_running() const;
     int get_body_count() const;
     godot::Dictionary get_body_state(int index) const;
+    int get_spacecraft_count() const;
+    godot::Dictionary get_spacecraft_state(int index) const;
+    int get_focus_target_count() const;
+    godot::Dictionary get_focus_target_state(int index) const;
     godot::String format_duration_ydhms(double total_seconds) const;
     double get_sim_time() const;
 

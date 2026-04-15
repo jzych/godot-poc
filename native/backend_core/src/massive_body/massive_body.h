@@ -22,6 +22,13 @@ enum class MassiveBodyType {
     Moon,
 };
 
+enum class FocusTargetType {
+    Star,
+    Planet,
+    Moon,
+    Spacecraft,
+};
+
 enum class OrbitalAnomalyKind {
     None,
     MeanAnomaly,
@@ -49,11 +56,34 @@ struct RotationParameters {
 
 struct MassiveBody {
     MassiveBodyType type{};
+    FocusTargetType focus_type = FocusTargetType::Planet;
+    std::string id;
     std::string name;
     OrbitParameters orbit;
     RotationParameters rotation;
     Color3 color;
+    double radius_km = 1.0;
+    double preferred_min_distance_km = 1.0;
+    double preferred_max_distance_km = 1.0;
     Vec3 position_km;
+    Vec3 velocity_km_s;
+};
+
+struct Spacecraft {
+    std::string id;
+    std::string name;
+    int reference_body_index = -1;
+    OrbitParameters orbit;
+    Color3 color;
+    double orbital_period_s = 0.0;
+    double bounding_radius_km = 0.01;
+    double visual_size_km = 0.02;
+    double preferred_min_distance_km = 0.05;
+    double preferred_max_distance_km = 100000.0;
+    Vec3 relative_position_km;
+    Vec3 relative_velocity_km_s;
+    Vec3 position_km;
+    Vec3 velocity_km_s;
 };
 
 } // namespace solar

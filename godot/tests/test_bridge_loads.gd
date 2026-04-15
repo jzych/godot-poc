@@ -106,6 +106,7 @@ func test_bridge_has_bodies():
 	add_child(bridge)
 	await get_tree().process_frame
 	assert_eq(bridge.get_body_count(), 3, "Should have 3 bodies after init")
+	assert_eq(bridge.get_spacecraft_count(), 1, "Should have one spacecraft focus target after init")
 	bridge.queue_free()
 
 func test_body_positions_change():
@@ -139,7 +140,15 @@ func test_body_state_exposes_orbit_metadata():
 	var orbit: Dictionary = earth_state["orbit"]
 	var rotation: Dictionary = earth_state["rotation"]
 
+	assert_eq(sun_state["id"], "sun", "Sun should expose a stable focus id")
+	assert_eq(sun_state["focus_type"], "star", "Sun should be exported as a star focus target")
 	assert_eq(sun_state["central_body_name"], "", "Root bodies should not expose placeholder central-body text")
+	assert_eq(earth_state["id"], "earth", "Earth should expose a stable focus id")
+	assert_eq(earth_state["focus_type"], "planet", "Earth should be exported as a planet focus target")
+	assert_gt(earth_state["radius_km"], 0.0, "Earth should export its physical radius")
+	assert_gt(earth_state["preferred_max_distance_km"], earth_state["preferred_min_distance_km"], "Earth should export ordered zoom bounds")
+	assert_true(earth_state["simulation_position_km"].has("x"), "Earth should expose high-precision position components")
+	assert_true(earth_state["simulation_velocity_km_s"].has("x"), "Earth should expose velocity components")
 	assert_eq(earth_state["central_body_name"], "Sun", "Earth should expose Sun as its central body")
 	assert_gt(earth_state["orbital_period_seconds"], 0.0, "Earth should expose orbital period in seconds")
 	assert_ne(earth_state["orbital_period_ydhms"], "", "Earth should expose formatted orbital period text")
@@ -148,6 +157,41 @@ func test_body_state_exposes_orbit_metadata():
 	assert_eq(orbit["anomaly_kind"], "mean_anomaly", "Earth should expose its anomaly representation")
 	assert_gt(rotation["rotation_speed_rad_per_s"], 0.0, "Earth should expose axial rotation speed")
 	assert_gt(rotation["orbital_period_seconds"], 0.0, "Earth should expose orbital period in rotation metadata")
+	bridge.queue_free()
+
+func test_bridge_exposes_unified_focus_targets_with_spacecraft():
+	var bridge = SolarSystemBridge.new()
+	add_child(bridge)
+	await get_tree().process_frame
+
+	var focus_target_count: int = bridge.get_focus_target_count()
+	var spacecraft_state: Dictionary = bridge.get_spacecraft_state(0)
+	var focus_spacecraft_state: Dictionary = bridge.get_focus_target_state(focus_target_count - 1)
+
+	assert_eq(focus_target_count, bridge.get_body_count() + bridge.get_spacecraft_count(), "Focus targets should combine bodies and spacecraft")
+	assert_eq(spacecraft_state["id"], "demo_probe", "Default spacecraft should expose a stable id")
+	assert_eq(spacecraft_state["focus_type"], "spacecraft", "Default spacecraft should be exported as a spacecraft focus target")
+	assert_eq(spacecraft_state["source_kind"], "spacecraft", "Spacecraft target should identify its source kind")
+	assert_eq(spacecraft_state["central_body_name"], "Earth", "Default spacecraft should be registered near Earth")
+	assert_eq(spacecraft_state["color"], Color(1.0, 0.2, 0.75), "Default spacecraft should render pink")
+	assert_eq(spacecraft_state["visual_shape"], "cube", "Default spacecraft should request a cube visual")
+	assert_almost_eq(spacecraft_state["visual_size_km"], 0.1, 0.000001, "Default spacecraft cube should be 100m per side")
+	assert_gt(spacecraft_state["radius_km"], 0.0, "Spacecraft should expose a framing radius")
+	var spacecraft_orbit: Dictionary = spacecraft_state["orbit"]
+	var spacecraft_periapsis_km: float = (
+		float(spacecraft_orbit["semi_major_axis_km"]) *
+		(1.0 - float(spacecraft_orbit["eccentricity"]))
+	)
+	assert_almost_eq(float(spacecraft_orbit["semi_major_axis_km"]), 8471.0, 0.001, "Default spacecraft should use the requested elliptical semi-major axis")
+	assert_almost_eq(float(spacecraft_orbit["eccentricity"]), 100.0 / 8471.0, 0.000001, "Default spacecraft should use the requested eccentricity")
+	assert_almost_eq(spacecraft_periapsis_km, 8371.0, 0.001, "Default spacecraft periapsis should be 2000km above Earth")
+	assert_almost_eq(float(spacecraft_orbit["apoapsis_km"]), 8571.0, 0.001, "Default spacecraft apoapsis should be 2200km above Earth")
+	assert_almost_eq(float(spacecraft_state["orbit"]["inclination_rad"]), deg_to_rad(60.0), 0.000001, "Default spacecraft should use a 60 degree inclination")
+	assert_gt(spacecraft_state["orbital_period_seconds"], 0.0, "Spacecraft should expose its elliptical orbital period")
+	assert_gt(spacecraft_state["preferred_max_distance_km"], spacecraft_state["preferred_min_distance_km"], "Spacecraft should expose ordered zoom bounds")
+	assert_true(spacecraft_state["simulation_position_km"].has("x"), "Spacecraft should expose high-precision position components")
+	assert_true(spacecraft_state["simulation_velocity_km_s"].has("x"), "Spacecraft should expose velocity components")
+	assert_eq(focus_spacecraft_state["id"], spacecraft_state["id"], "Unified focus target lookup should include spacecraft after bodies")
 	bridge.queue_free()
 
 func test_initial_body_position_matches_exported_anomaly():

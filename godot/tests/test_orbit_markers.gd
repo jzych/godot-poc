@@ -55,9 +55,11 @@ func _select_body(scene, body_view):
 	var camera: Camera3D = scene.camera_rig.get_camera_node()
 	_click_at(scene, camera.unproject_position(body_view.global_position))
 
-func _frame_selected_orbit(scene, orthographic_size: float, orbit_distance: float = 120.0):
-	scene.camera_rig.current_orthographic_size = orthographic_size
-	scene.camera_rig.target_orthographic_size = orthographic_size
+func _frame_selected_orbit(scene, _view_size: float, orbit_distance: float = 120.0):
+	if scene.selected_body_view != null:
+		var central_body_index := int(scene.selected_body_view.orbit_state.get("central_body_index", -1))
+		if central_body_index >= 0:
+			scene.camera_rig.focus_position = scene._get_orbit_center_position(central_body_index)
 	scene.camera_rig.current_distance = orbit_distance
 	scene.camera_rig.target_distance = orbit_distance
 	scene.camera_rig._apply_state()

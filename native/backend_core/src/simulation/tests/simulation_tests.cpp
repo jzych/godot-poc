@@ -256,11 +256,24 @@ solar::Vec3 expected_relative_position(
         scale(tangential_direction, radius_km * std::sin(true_anomaly)));
 }
 
+solar::Vec3 expected_relative_position(
+    const solar::Spacecraft& spacecraft,
+    double sim_time_seconds = 0.0) {
+    solar::MassiveBody orbiting_body{};
+    orbiting_body.orbit = spacecraft.orbit;
+    orbiting_body.rotation.orbital_period_s = spacecraft.orbital_period_s;
+    return expected_relative_position(orbiting_body, sim_time_seconds);
+}
+
 } // namespace
 
 TEST(SimulationTest, CanInstantiate) {
     solar::Simulation sim;
     EXPECT_FALSE(sim.is_running());
+}
+
+TEST(SimulationTest, TimeScaleRunsAtHalfPreviousPrototypeRate) {
+    EXPECT_DOUBLE_EQ(solar::Simulation::TIME_SCALE, 1080.0);
 }
 
 TEST(SimulationTest, StartStop) {
@@ -276,6 +289,16 @@ TEST(SimulationTest, AddBodies) {
     sim.add_body(make_sun());
     sim.add_body(make_earth());
     EXPECT_EQ(sim.body_count(), 2u);
+}
+
+TEST(SimulationTest, AddSpacecraft) {
+    solar::Simulation sim;
+    const auto spacecraft = solar::make_default_spacecraft();
+
+    sim.add_spacecraft(spacecraft[0]);
+
+    EXPECT_EQ(sim.spacecraft_count(), 1u);
+    EXPECT_EQ(sim.spacecraft()[0].id, "demo_probe");
 }
 
 TEST(SimulationTest, SunRemainsAtOrigin) {
@@ -321,6 +344,45 @@ TEST(SimulationTest, InitialOrbitPositionHonorsAnomalyAtEpoch) {
     EXPECT_NEAR(earth.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(earth.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
     EXPECT_NEAR(earth.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+    EXPECT_GT(length(earth.velocity_km_s), 0.0);
+}
+
+TEST(SimulationTest, SpacecraftPositionFollowsReferenceBody) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_earth());
+    const auto spacecraft = solar::make_default_spacecraft();
+    sim.add_spacecraft(spacecraft[0]);
+    sim.start();
+    sim.step(0.0);
+
+    const auto& earth = sim.bodies()[1];
+    const auto& probe = sim.spacecraft()[0];
+    const solar::Vec3 expected_position =
+        add(earth.position_km, expected_relative_position(probe));
+    const solar::Vec3 relative_position = subtract(probe.position_km, earth.position_km);
+
+    EXPECT_NEAR(probe.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(probe.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(probe.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(length(relative_position), 8371.0, KM_DISTANCE_TOLERANCE);
+    EXPECT_GT(length(subtract(probe.velocity_km_s, earth.velocity_km_s)), 0.0);
+}
+
+TEST(SimulationTest, SpacecraftOrbitUsesSixtyDegreeInclination) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_earth());
+    const auto spacecraft = solar::make_default_spacecraft();
+    sim.add_spacecraft(spacecraft[0]);
+    sim.start();
+    sim.step(spacecraft[0].orbital_period_s / (4.0 * solar::Simulation::TIME_SCALE));
+
+    const auto relative_position =
+        subtract(sim.spacecraft()[0].position_km, sim.bodies()[1].position_km);
+
+    EXPECT_GT(std::abs(relative_position.y), 6000.0)
+        << "A 60-degree spacecraft orbit should rise well out of the ecliptic plane after a quarter orbit";
 }
 
 TEST(SimulationTest, ReferencePlaneOrbitUsesRealWorldProgradeDirection) {

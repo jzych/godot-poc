@@ -1,13 +1,20 @@
 extends Node3D
 class_name CosmosCameraRig
 
-const FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER := 3.0
+const MIN_FOV_TANGENT := 0.000001
+const MIN_ZOOM_DISTANCE := 0.000000000001
 
 @export var rotation_sensitivity := 0.2
 @export var pitch_min_deg := -80.0
 @export var pitch_max_deg := 80.0
-@export var min_distance := 0.5
-@export var max_distance := 20000.0
+@export var min_distance := MIN_ZOOM_DISTANCE
+@export var max_distance := 500000.0
+@export var fixed_fov_degrees := 75.0
+@export var max_focus_diameter_view_fraction := 2.0 / 3.0
+@export var min_near_clip := MIN_ZOOM_DISTANCE
+@export var near_clip_distance_ratio := 0.01
+@export var min_far_clip := 25000.0
+@export var far_clip_distance_multiplier := 2.0
 @export var zoom_step_ratio := 0.15
 @export var zoom_smoothing_speed := 8.0
 @export var pan_speed_base := 6.0
@@ -15,7 +22,8 @@ const FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER := 3.0
 @export var pan_drag_threshold := 6.0
 @export var focus_lock_smoothing_speed := 8.0
 @export var focus_lock_snap_distance := 0.01
-@export var distance_snap_threshold := 0.01
+@export var distance_snap_threshold := MIN_ZOOM_DISTANCE
+@export var distance_snap_ratio := 0.000001
 
 var focus_position: Vector3 = Vector3.ZERO
 @export var pan_plane_height := 0.0
@@ -23,6 +31,13 @@ var yaw_degrees_value: float = 0.0
 var pitch_degrees_value: float = -35.0
 var current_distance: float = 3.6055513
 var target_distance: float = 3.6055513
+var current_focus_id: String = ""
+var current_focus_type: String = ""
+var current_focus_radius: float = 0.0
+var current_focus_preferred_min_distance: float = min_distance
+var current_focus_preferred_max_distance: float = max_distance
+var current_focus_min_distance: float = min_distance
+var current_focus_max_distance: float = max_distance
 var focus_lock_target_position: Vector3 = Vector3.ZERO
 var _focus_lock_transition_offset: Vector3 = Vector3.ZERO
 
@@ -47,6 +62,7 @@ func _process(delta):
 	var needs_apply: bool = false
 	var focus_snap_squared: float = pow(focus_lock_snap_distance, 2)
 	var distance_offset: float = absf(current_distance - target_distance)
+	var distance_snap_limit: float = _get_distance_snap_threshold()
 	var focus_transition_settled: bool = true
 	var distance_transition_settled: bool = true
 
@@ -72,16 +88,19 @@ func _process(delta):
 
 		pan_plane_height = focus_position.y
 
-	if distance_offset <= distance_snap_threshold:
-		current_distance = target_distance
+	if distance_offset <= distance_snap_limit:
+		if not is_equal_approx(current_distance, target_distance):
+			current_distance = target_distance
+			needs_apply = true
 	else:
 		var weight: float = clamp(delta * zoom_smoothing_speed, 0.0, 1.0)
 		current_distance = lerpf(current_distance, target_distance, weight)
-		if absf(current_distance - target_distance) <= distance_snap_threshold:
+		if absf(current_distance - target_distance) <= distance_snap_limit:
 			current_distance = target_distance
+			needs_apply = true
 		else:
 			distance_transition_settled = false
-		needs_apply = true
+			needs_apply = true
 
 	if _focus_lock_transition_active and focus_transition_settled and distance_transition_settled:
 		_focus_lock_transition_offset = Vector3.ZERO
@@ -139,8 +158,8 @@ func _unhandled_input(event):
 
 func configure_from_offset(new_focus_position: Vector3, offset: Vector3):
 	var safe_offset: Vector3 = offset
-	if safe_offset.length_squared() <= 0.0001:
-		safe_offset = Vector3(0.0, 0.0, 1.0)
+	if safe_offset.length_squared() <= pow(MIN_ZOOM_DISTANCE, 2):
+		safe_offset = Vector3(0.0, 0.0, min_distance)
 
 	focus_position = new_focus_position
 	pan_plane_height = new_focus_position.y
@@ -158,8 +177,66 @@ func configure_from_offset(new_focus_position: Vector3, offset: Vector3):
 
 	_apply_state()
 
+func configure_from_focus_target(new_focus_position: Vector3, offset: Vector3, target_state: Dictionary):
+	configure_from_offset(new_focus_position, offset)
+	_apply_focus_target_state(target_state, false)
+	_apply_state()
+
 func get_camera_node() -> Camera3D:
 	return camera
+
+func get_camera_state() -> Dictionary:
+	return {
+		"current_focus_id": current_focus_id,
+		"current_focus_type": current_focus_type,
+		"yaw": yaw_degrees_value,
+		"pitch": pitch_degrees_value,
+		"focus_distance": current_distance,
+		"target_focus_distance": target_distance,
+		"min_focus_distance": _get_active_min_distance(),
+		"max_focus_distance": _get_active_max_distance(),
+		"near_clip": camera.near if camera != null else min_near_clip,
+		"far_clip": camera.far if camera != null else min_far_clip,
+		"projection": "perspective" if camera == null or camera.projection == Camera3D.PROJECTION_PERSPECTIVE else "other",
+		"camera_local_position": camera.position if camera != null else Vector3.ZERO,
+		"effective_fov": camera.fov if camera != null else fixed_fov_degrees,
+		"zoom_scalar": get_zoom_scalar(),
+	}
+
+func get_zoom_scalar() -> float:
+	return _distance_to_zoom_scalar(
+		target_distance,
+		_get_active_min_distance(),
+		_get_active_max_distance()
+	)
+
+func set_fixed_fov_degrees(value: float):
+	fixed_fov_degrees = clamp(value, 5.0, 120.0)
+	_recompute_active_focus_bounds()
+	current_distance = clamp(current_distance, _get_active_min_distance(), _get_active_max_distance())
+	target_distance = clamp(target_distance, _get_active_min_distance(), _get_active_max_distance())
+	_apply_state()
+
+func set_focus_distance(value: float):
+	var clamped_distance: float = clamp(value, _get_active_min_distance(), _get_active_max_distance())
+	current_distance = clamped_distance
+	target_distance = clamped_distance
+	_apply_state()
+
+func set_zoom_scalar(value: float):
+	set_focus_distance(_zoom_scalar_to_distance(
+		value,
+		_get_active_min_distance(),
+		_get_active_max_distance()
+	))
+
+func set_near_clip_distance_ratio(value: float):
+	near_clip_distance_ratio = clamp(value, 0.000001, 0.5)
+	_apply_state()
+
+func set_far_clip_distance_multiplier(value: float):
+	far_clip_distance_multiplier = clamp(value, 1.01, 100.0)
+	_apply_state()
 
 func apply_rotate_motion(relative: Vector2):
 	yaw_degrees_value += relative.x * rotation_sensitivity
@@ -175,7 +252,11 @@ func apply_zoom_step(direction: float):
 		return
 
 	var zoom_factor: float = pow(1.0 + zoom_step_ratio, direction)
-	target_distance = clamp(target_distance * zoom_factor, min_distance, max_distance)
+	target_distance = clamp(
+		target_distance * zoom_factor,
+		_get_active_min_distance(),
+		_get_active_max_distance()
+	)
 
 func apply_keyboard_pan(input_vector: Vector2, delta: float):
 	if delta <= 0.0 or input_vector.length_squared() <= 0.0:
@@ -205,6 +286,15 @@ func apply_drag_pan(relative: Vector2):
 	var world_units_per_pixel: float = _get_pan_speed() / reference_extent
 
 	_translate_focus_on_pan_plane(translation * world_units_per_pixel)
+
+func apply_render_origin_shift(origin_delta: Vector3):
+	if origin_delta.length_squared() <= 0.0:
+		return
+
+	focus_position -= origin_delta
+	focus_lock_target_position -= origin_delta
+	pan_plane_height = focus_position.y
+	_apply_state()
 	
 func _translate_focus_on_pan_plane(translation: Vector3):
 	if translation.length_squared() <= 0.0:
@@ -217,7 +307,32 @@ func _translate_focus_on_pan_plane(translation: Vector3):
 func start_focus_lock(target_focus_position: Vector3, body_radius: float):
 	_focus_lock_active = true
 	focus_lock_target_position = target_focus_position
+	current_focus_preferred_min_distance = min_distance
+	current_focus_preferred_max_distance = max_distance
 	target_distance = get_focus_lock_distance_for_radius(body_radius)
+	current_focus_radius = body_radius
+	current_focus_min_distance = target_distance
+	current_focus_max_distance = max(current_focus_min_distance, max_distance)
+	_focus_lock_transition_offset = focus_position - target_focus_position
+	_focus_lock_transition_active = (
+		_focus_lock_transition_offset.length_squared() > pow(focus_lock_snap_distance, 2)
+		or absf(current_distance - target_distance) > distance_snap_threshold
+	)
+	if not _focus_lock_transition_active:
+		_focus_lock_transition_offset = Vector3.ZERO
+		focus_position = focus_lock_target_position
+	pan_plane_height = focus_position.y
+
+func start_focus_lock_for_target(target_focus_position: Vector3, target_state: Dictionary):
+	var previous_zoom_scalar: float = get_zoom_scalar()
+	_apply_focus_target_state(target_state, true)
+	_focus_lock_active = true
+	focus_lock_target_position = target_focus_position
+	target_distance = _zoom_scalar_to_distance(
+		previous_zoom_scalar,
+		current_focus_min_distance,
+		current_focus_max_distance
+	)
 	_focus_lock_transition_offset = focus_position - target_focus_position
 	_focus_lock_transition_active = (
 		_focus_lock_transition_offset.length_squared() > pow(focus_lock_snap_distance, 2)
@@ -244,13 +359,27 @@ func cancel_focus_lock():
 	_focus_lock_active = false
 	_focus_lock_transition_active = false
 	_focus_lock_transition_offset = Vector3.ZERO
+	current_focus_id = ""
+	current_focus_type = ""
+	current_focus_radius = 0.0
+	current_focus_preferred_min_distance = min_distance
+	current_focus_preferred_max_distance = max_distance
+	current_focus_min_distance = min_distance
+	current_focus_max_distance = max_distance
 
 func is_focus_lock_active() -> bool:
 	return _focus_lock_active
 
 func get_focus_lock_distance_for_radius(body_radius: float) -> float:
+	var safe_radius: float = max(body_radius, 0.0)
+	if safe_radius <= 0.0:
+		return min_distance
+
+	var safe_view_fraction: float = clamp(max_focus_diameter_view_fraction, 0.01, 0.95)
+	var fov_tangent: float = max(tan(deg_to_rad(fixed_fov_degrees) * 0.5), MIN_FOV_TANGENT)
+	var framing_distance: float = safe_radius / (safe_view_fraction * fov_tangent)
 	return clamp(
-		max(body_radius * FOCUS_LOCK_DISTANCE_RADIUS_MULTIPLIER, min_distance),
+		max(framing_distance, min_distance),
 		min_distance,
 		max_distance
 	)
@@ -262,7 +391,80 @@ func _apply_state():
 	position = focus_position
 	yaw_pivot.rotation_degrees = Vector3(0.0, yaw_degrees_value, 0.0)
 	pitch_pivot.rotation_degrees = Vector3(pitch_degrees_value, 0.0, 0.0)
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+	camera.fov = fixed_fov_degrees
+	camera.near = max(min_near_clip, current_distance * near_clip_distance_ratio)
+	camera.far = max(min_far_clip, current_distance * far_clip_distance_multiplier)
 	camera.position = Vector3(0.0, 0.0, current_distance)
+
+func _apply_focus_target_state(target_state: Dictionary, preserve_zoom_scalar: bool):
+	var previous_zoom_scalar: float = get_zoom_scalar()
+	current_focus_id = str(target_state.get("id", current_focus_id))
+	current_focus_type = str(target_state.get("focus_type", current_focus_type))
+	current_focus_radius = max(float(target_state.get("framing_radius", current_focus_radius)), 0.0)
+	current_focus_preferred_min_distance = float(target_state.get("preferred_min_distance", min_distance))
+	current_focus_preferred_max_distance = float(target_state.get("preferred_max_distance", max_distance))
+	_recompute_active_focus_bounds()
+
+	if preserve_zoom_scalar:
+		target_distance = _zoom_scalar_to_distance(
+			previous_zoom_scalar,
+			current_focus_min_distance,
+			current_focus_max_distance
+		)
+	else:
+		current_distance = clamp(current_distance, current_focus_min_distance, current_focus_max_distance)
+		target_distance = clamp(target_distance, current_focus_min_distance, current_focus_max_distance)
+
+func _recompute_active_focus_bounds():
+	if not _has_active_focus_bounds():
+		current_focus_min_distance = min_distance
+		current_focus_max_distance = max_distance
+		return
+
+	var radius_distance: float = get_focus_lock_distance_for_radius(current_focus_radius)
+	current_focus_min_distance = clamp(
+		max(current_focus_preferred_min_distance, radius_distance, min_distance),
+		min_distance,
+		max_distance
+	)
+	current_focus_max_distance = max(max_distance, current_focus_min_distance)
+
+func _distance_to_zoom_scalar(distance: float, min_bound: float, max_bound: float) -> float:
+	var safe_min: float = max(min_bound, MIN_ZOOM_DISTANCE)
+	var safe_max: float = max(max_bound, safe_min)
+	if is_equal_approx(safe_min, safe_max):
+		return 0.0
+
+	return clamp(
+		log(max(distance, safe_min) / safe_min) / log(safe_max / safe_min),
+		0.0,
+		1.0
+	)
+
+func _zoom_scalar_to_distance(zoom_scalar: float, min_bound: float, max_bound: float) -> float:
+	var safe_min: float = max(min_bound, MIN_ZOOM_DISTANCE)
+	var safe_max: float = max(max_bound, safe_min)
+	if is_equal_approx(safe_min, safe_max):
+		return safe_min
+
+	return clamp(
+		safe_min * pow(safe_max / safe_min, clamp(zoom_scalar, 0.0, 1.0)),
+		safe_min,
+		safe_max
+	)
+
+func _get_active_min_distance() -> float:
+	return current_focus_min_distance if _has_active_focus_bounds() else min_distance
+
+func _get_active_max_distance() -> float:
+	return current_focus_max_distance if _has_active_focus_bounds() else max_distance
+
+func _has_active_focus_bounds() -> bool:
+	return not current_focus_id.is_empty() or _focus_lock_active
+
+func _get_distance_snap_threshold() -> float:
+	return max(distance_snap_threshold, absf(target_distance) * distance_snap_ratio)
 
 func _ensure_input_actions():
 	_ensure_action(&"camera_rotate_hold", [_make_mouse_button_event(2)])

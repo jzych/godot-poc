@@ -62,9 +62,15 @@ func test_start_focus_lock_sets_radius_based_distance_without_changing_angles():
 	var initial_pitch: float = rig.pitch_degrees_value
 
 	rig.start_focus_lock(Vector3(20.0, 5.0, 20.0), 2.0)
+	var expected_distance: float = rig.get_focus_lock_distance_for_radius(2.0)
 
 	assert_true(rig.is_focus_lock_active(), "Starting a focus lock should enable lock mode")
-	assert_eq(rig.target_distance, 6.0, "Lock distance should default to three times the body radius")
+	assert_almost_eq(
+		rig.target_distance,
+		expected_distance,
+		0.000001,
+		"Lock distance should frame the body from its radius and fixed FOV"
+	)
 	assert_eq(rig.yaw_degrees_value, initial_yaw, "Focus lock should preserve yaw")
 	assert_eq(rig.pitch_degrees_value, initial_pitch, "Focus lock should preserve pitch")
 
@@ -221,11 +227,10 @@ func test_double_click_starts_focus_lock_on_selected_body():
 	assert_eq(scene.selected_body_view, focus_target, "Double-click should select the clicked body")
 	assert_eq(scene.locked_body_view, focus_target, "Double-click should lock onto the clicked body")
 	assert_true(scene.camera_rig.is_focus_lock_active(), "Double-click should start focus lock mode")
-	assert_eq(
-		scene.camera_rig.target_distance,
-		scene.camera_rig.get_focus_lock_distance_for_radius(focus_target.body_radius),
-		"Double-click should set the lock distance from body radius"
-	)
+	assert_eq(scene.camera_rig.current_focus_id, focus_target.focus_id, "Double-click should switch the camera focus id")
+	assert_eq(scene.camera_rig.current_focus_type, focus_target.focus_type, "Double-click should switch the camera focus type")
+	assert_gte(scene.camera_rig.target_distance, focus_target.preferred_min_distance_units, "Double-click should respect the target min zoom bound")
+	assert_lte(scene.camera_rig.target_distance, focus_target.preferred_max_distance_units, "Double-click should respect the target max zoom bound")
 	assert_false(scene.camera_rig._pan_active, "Double-click should not start pan-hold in the camera rig")
 
 func test_main_scene_pan_cancels_focus_lock():
