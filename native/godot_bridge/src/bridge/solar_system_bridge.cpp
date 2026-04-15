@@ -7,6 +7,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 
 #include "bridge/bridge_state_builder.h"
+#include "bridge/bridge_state_resolver.h"
 #include "time/duration_format.h"
 
 namespace solar {
@@ -147,23 +148,12 @@ int SolarSystemBridge::get_body_count() const {
 }
 
 godot::Dictionary SolarSystemBridge::get_body_state(int index) const {
-    if (index < 0 || index >= static_cast<int>(sim_.body_count())) {
+    const auto state_view = resolve_body_state_view(sim_, index);
+    if (!state_view.has_value()) {
         return {};
     }
 
-    const auto& body = sim_.bodies()[static_cast<size_t>(index)];
-    std::string central_body_name;
-    if (body.orbit.central_body_index >= 0 &&
-        body.orbit.central_body_index < static_cast<int>(sim_.body_count())) {
-        central_body_name =
-            sim_.bodies()[static_cast<size_t>(body.orbit.central_body_index)].name;
-    }
-    const FocusTargetStateView state_view = build_body_state_view(
-        body,
-        index,
-        central_body_name,
-        GODOT_UNITS_PER_AU / KM_PER_AU);
-    return focus_target_state_to_dictionary(state_view);
+    return focus_target_state_to_dictionary(*state_view);
 }
 
 int SolarSystemBridge::get_spacecraft_count() const {
@@ -171,23 +161,12 @@ int SolarSystemBridge::get_spacecraft_count() const {
 }
 
 godot::Dictionary SolarSystemBridge::get_spacecraft_state(int index) const {
-    if (index < 0 || index >= static_cast<int>(sim_.spacecraft_count())) {
+    const auto state_view = resolve_spacecraft_state_view(sim_, index);
+    if (!state_view.has_value()) {
         return {};
     }
 
-    const auto& spacecraft = sim_.spacecraft()[static_cast<size_t>(index)];
-    std::string reference_body_name;
-    if (spacecraft.reference_body_index >= 0 &&
-        spacecraft.reference_body_index < static_cast<int>(sim_.body_count())) {
-        reference_body_name =
-            sim_.bodies()[static_cast<size_t>(spacecraft.reference_body_index)].name;
-    }
-    const FocusTargetStateView state_view = build_spacecraft_state_view(
-        spacecraft,
-        index,
-        reference_body_name,
-        GODOT_UNITS_PER_AU / KM_PER_AU);
-    return focus_target_state_to_dictionary(state_view);
+    return focus_target_state_to_dictionary(*state_view);
 }
 
 int SolarSystemBridge::get_focus_target_count() const {
@@ -195,12 +174,12 @@ int SolarSystemBridge::get_focus_target_count() const {
 }
 
 godot::Dictionary SolarSystemBridge::get_focus_target_state(int index) const {
-    const int body_count = get_body_count();
-    if (index < body_count) {
-        return get_body_state(index);
+    const auto state_view = resolve_focus_target_state_view(sim_, index);
+    if (!state_view.has_value()) {
+        return {};
     }
 
-    return get_spacecraft_state(index - body_count);
+    return focus_target_state_to_dictionary(*state_view);
 }
 
 godot::String SolarSystemBridge::format_duration_ydhms(double total_seconds) const {

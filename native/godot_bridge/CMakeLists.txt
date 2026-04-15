@@ -3,6 +3,7 @@ set(SUPPORT_TARGET godot_bridge_support)
 
 add_library(${SUPPORT_TARGET} STATIC
     src/bridge/bridge_state_builder.cpp
+    src/bridge/bridge_state_resolver.cpp
 )
 
 target_include_directories(${SUPPORT_TARGET} PUBLIC

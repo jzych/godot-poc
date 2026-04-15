@@ -27,6 +27,7 @@ gtest_discover_tests(backend_core_tests)
 
 add_executable(godot_bridge_tests
     ${CMAKE_SOURCE_DIR}/native/godot_bridge/src/bridge/tests/bridge_state_builder_tests.cpp
+    ${CMAKE_SOURCE_DIR}/native/godot_bridge/src/bridge/tests/bridge_state_resolver_tests.cpp
 )
 
 target_link_libraries(godot_bridge_tests
