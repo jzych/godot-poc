@@ -25,6 +25,16 @@ target_link_libraries(backend_core_tests
 include(GoogleTest)
 gtest_discover_tests(backend_core_tests)
 
+add_executable(godot_bridge_tests
+    ${CMAKE_SOURCE_DIR}/native/godot_bridge/src/bridge/tests/bridge_state_builder_tests.cpp
+)
+
+target_link_libraries(godot_bridge_tests
+    PRIVATE godot_bridge_support GTest::gtest_main
+)
+
+gtest_discover_tests(godot_bridge_tests)
+
 # Godot writes editor and user data outside the repo by default. Redirect it
 # into the build tree so headless runs work under sandboxed and portable installs.
 set(GODOT_TEST_HOME "${CMAKE_BINARY_DIR}/godot_user")
