@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -18,7 +19,7 @@ std::string format_duration_ydhms(double total_seconds) {
     constexpr std::int64_t seconds_per_day = 24 * seconds_per_hour;
     constexpr std::int64_t seconds_per_year = 365 * seconds_per_day;
 
-    std::int64_t remaining_seconds =
+    auto remaining_seconds =
         static_cast<std::int64_t>(std::llround(total_seconds));
 
     const std::int64_t years = remaining_seconds / seconds_per_year;
@@ -37,19 +38,19 @@ std::string format_duration_ydhms(double total_seconds) {
 
     std::vector<std::string> parts;
     if (years > 0) {
-        parts.push_back(std::to_string(years) + "y");
+        parts.push_back(std::format("{}y", years));
     }
     if (days > 0) {
-        parts.push_back(std::to_string(days) + "d");
+        parts.push_back(std::format("{}d", days));
     }
     if (hours > 0) {
-        parts.push_back(std::to_string(hours) + "h");
+        parts.push_back(std::format("{}h", hours));
     }
     if (minutes > 0) {
-        parts.push_back(std::to_string(minutes) + "min");
+        parts.push_back(std::format("{}min", minutes));
     }
     if (seconds > 0 || parts.empty()) {
-        parts.push_back(std::to_string(seconds) + "s");
+        parts.push_back(std::format("{}s", seconds));
     }
 
     std::ostringstream stream;

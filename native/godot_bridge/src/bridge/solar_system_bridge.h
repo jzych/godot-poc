@@ -32,9 +32,6 @@ protected:
 
 private:
     Simulation sim_;
-
-    static constexpr double KM_PER_AU = 149597870.7;
-    static constexpr double GODOT_UNITS_PER_AU = 10000.0;
 };
 
 } // namespace solar

@@ -40,6 +40,18 @@ solar::MassiveBody make_reference_plane_circular_body() {
     return body;
 }
 
+solar::MassiveBody make_reference_plane_body_with_anomaly(
+    solar::OrbitalAnomalyKind anomaly_kind,
+    double anomaly_at_epoch,
+    double eccentricity = 0.2) {
+    solar::MassiveBody body = make_reference_plane_circular_body();
+    body.orbit.eccentricity = eccentricity;
+    body.orbit.apoapsis_km = body.orbit.semi_major_axis_km * (1.0 + eccentricity);
+    body.orbit.anomaly_kind = anomaly_kind;
+    body.orbit.anomaly_at_epoch = anomaly_at_epoch;
+    return body;
+}
+
 double normalize_angle(double angle_rad) {
     angle_rad = std::fmod(angle_rad, 2.0 * std::numbers::pi);
     if (angle_rad < -std::numbers::pi) {
@@ -137,15 +149,17 @@ double true_to_mean_anomaly(double true_anomaly_rad, double eccentricity) {
 
 double mean_anomaly_at_time(const solar::MassiveBody& body, double sim_time_seconds = 0.0) {
     const double omega = mean_motion_rad_per_s(body);
+    using enum solar::OrbitalAnomalyKind;
+
     switch (body.orbit.anomaly_kind) {
-    case solar::OrbitalAnomalyKind::MeanAnomaly:
+    case MeanAnomaly:
         return body.orbit.anomaly_at_epoch + (omega * sim_time_seconds);
-    case solar::OrbitalAnomalyKind::TrueAnomaly:
+    case TrueAnomaly:
         return true_to_mean_anomaly(body.orbit.anomaly_at_epoch, body.orbit.eccentricity) +
                (omega * sim_time_seconds);
-    case solar::OrbitalAnomalyKind::TimeOfPeriapsisPassage:
+    case TimeOfPeriapsisPassage:
         return omega * (sim_time_seconds - body.orbit.anomaly_at_epoch);
-    case solar::OrbitalAnomalyKind::None:
+    case None:
     default:
         return omega * sim_time_seconds;
     }
@@ -157,10 +171,11 @@ double solve_eccentric_anomaly(double mean_anomaly_rad, double eccentricity) {
     }
 
     const double normalized_mean_anomaly = normalize_angle(mean_anomaly_rad);
-    double eccentric_anomaly =
-        eccentricity < 0.8
-            ? normalized_mean_anomaly
-            : (normalized_mean_anomaly >= 0.0 ? std::numbers::pi : -std::numbers::pi);
+    double eccentric_anomaly = normalized_mean_anomaly;
+    if (eccentricity >= 0.8) {
+        eccentric_anomaly =
+            normalized_mean_anomaly >= 0.0 ? std::numbers::pi : -std::numbers::pi;
+    }
 
     for (int iteration = 0; iteration < 12; ++iteration) {
         const double sin_e = std::sin(eccentric_anomaly);
@@ -403,6 +418,75 @@ TEST(SimulationTest, ReferencePlaneOrbitUsesRealWorldProgradeDirection) {
         << "A prograde orbit should advance from +X toward -Z in the Y-up world frame";
     EXPECT_GT(y_component_of_angular_momentum(initial_position, next_position), 0.0)
         << "Reference-plane orbit angular momentum should point toward +Y";
+}
+
+TEST(SimulationTest, TrueAnomalyAtEpochProducesExpectedInitialPosition) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_reference_plane_body_with_anomaly(
+        solar::OrbitalAnomalyKind::TrueAnomaly,
+        std::numbers::pi / 3.0));
+    sim.start();
+    sim.step(0.0);
+
+    const auto& body = sim.bodies()[1];
+    const solar::Vec3 expected_position = expected_relative_position(body);
+
+    EXPECT_NEAR(body.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+}
+
+TEST(SimulationTest, TimeOfPeriapsisPassageProducesExpectedInitialPosition) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_reference_plane_body_with_anomaly(
+        solar::OrbitalAnomalyKind::TimeOfPeriapsisPassage,
+        125.0));
+    sim.start();
+    sim.step(0.0);
+
+    const auto& body = sim.bodies()[1];
+    const solar::Vec3 expected_position = expected_relative_position(body);
+
+    EXPECT_NEAR(body.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+}
+
+TEST(SimulationTest, NoneAnomalyDefaultsToMeanMotionFromZero) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_reference_plane_body_with_anomaly(
+        solar::OrbitalAnomalyKind::None,
+        500.0));
+    sim.start();
+    sim.step(0.0);
+
+    const auto& body = sim.bodies()[1];
+    const solar::Vec3 expected_position = expected_relative_position(body);
+
+    EXPECT_NEAR(body.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
+}
+
+TEST(SimulationTest, HighlyEccentricOrbitProducesExpectedInitialPosition) {
+    solar::Simulation sim;
+    sim.add_body(make_sun());
+    sim.add_body(make_reference_plane_body_with_anomaly(
+        solar::OrbitalAnomalyKind::MeanAnomaly,
+        std::numbers::pi / 2.0,
+        0.85));
+    sim.start();
+    sim.step(0.0);
+
+    const auto& body = sim.bodies()[1];
+    const solar::Vec3 expected_position = expected_relative_position(body);
+
+    EXPECT_NEAR(body.position_km.x, expected_position.x, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.y, expected_position.y, KM_POSITION_TOLERANCE);
+    EXPECT_NEAR(body.position_km.z, expected_position.z, KM_POSITION_TOLERANCE);
 }
 
 TEST(SimulationTest, EarthOrbitalRadiusVariesAcrossOrbit) {

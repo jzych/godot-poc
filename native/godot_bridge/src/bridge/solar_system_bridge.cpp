@@ -6,40 +6,13 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
+#include "bridge/bridge_state_builder.h"
+#include "bridge/bridge_state_resolver.h"
 #include "time/duration_format.h"
 
 namespace solar {
 
 namespace {
-
-const char* anomaly_kind_name(OrbitalAnomalyKind kind) {
-    switch (kind) {
-    case OrbitalAnomalyKind::MeanAnomaly:
-        return "mean_anomaly";
-    case OrbitalAnomalyKind::TrueAnomaly:
-        return "true_anomaly";
-    case OrbitalAnomalyKind::TimeOfPeriapsisPassage:
-        return "time_of_periapsis_passage";
-    case OrbitalAnomalyKind::None:
-    default:
-        return "none";
-    }
-}
-
-const char* focus_target_type_name(FocusTargetType type) {
-    switch (type) {
-    case FocusTargetType::Star:
-        return "star";
-    case FocusTargetType::Planet:
-        return "planet";
-    case FocusTargetType::Moon:
-        return "moon";
-    case FocusTargetType::Spacecraft:
-        return "spacecraft";
-    default:
-        return "unknown";
-    }
-}
 
 godot::Dictionary vec3_to_dictionary(const Vec3& vector) {
     godot::Dictionary result;
@@ -49,36 +22,14 @@ godot::Dictionary vec3_to_dictionary(const Vec3& vector) {
     return result;
 }
 
-godot::Vector3 vec3_to_units(const Vec3& vector, double scale) {
+godot::Vector3 vec3_to_vector3(const Vec3& vector) {
     return godot::Vector3(
-        vector.x * scale,
-        vector.y * scale,
-        vector.z * scale);
+        static_cast<godot::real_t>(vector.x),
+        static_cast<godot::real_t>(vector.y),
+        static_cast<godot::real_t>(vector.z));
 }
 
-godot::Dictionary make_focus_metadata(
-    const std::string& id,
-    FocusTargetType focus_type,
-    double radius_km,
-    double preferred_min_distance_km,
-    double preferred_max_distance_km,
-    const Vec3& position_km,
-    const Vec3& velocity_km_s,
-    double scale) {
-    godot::Dictionary state;
-    state["id"] = godot::String(id.c_str());
-    state["focus_type"] = godot::String(focus_target_type_name(focus_type));
-    state["radius_km"] = radius_km;
-    state["framing_radius_km"] = radius_km;
-    state["preferred_min_distance_km"] = preferred_min_distance_km;
-    state["preferred_max_distance_km"] = preferred_max_distance_km;
-    state["simulation_position_km"] = vec3_to_dictionary(position_km);
-    state["simulation_velocity_km_s"] = vec3_to_dictionary(velocity_km_s);
-    state["position"] = vec3_to_units(position_km, scale);
-    return state;
-}
-
-godot::Dictionary orbit_to_dictionary(const OrbitParameters& orbit) {
+godot::Dictionary orbit_to_dictionary(const OrbitStateView& orbit) {
     godot::Dictionary orbit_state;
     orbit_state["central_body_index"] = orbit.central_body_index;
     orbit_state["semi_major_axis_km"] = orbit.semi_major_axis_km;
@@ -89,9 +40,62 @@ godot::Dictionary orbit_to_dictionary(const OrbitParameters& orbit) {
     orbit_state["argument_of_periapsis_rad"] =
         orbit.argument_of_periapsis_rad;
     orbit_state["apoapsis_km"] = orbit.apoapsis_km;
-    orbit_state["anomaly_kind"] = godot::String(anomaly_kind_name(orbit.anomaly_kind));
+    orbit_state["anomaly_kind"] = godot::String(orbit.anomaly_kind.c_str());
     orbit_state["anomaly_at_epoch"] = orbit.anomaly_at_epoch;
     return orbit_state;
+}
+
+godot::Dictionary rotation_to_dictionary(const RotationStateView& rotation) {
+    godot::Dictionary rotation_state;
+    rotation_state["rotation_speed_rad_per_s"] = rotation.rotation_speed_rad_per_s;
+    rotation_state["axial_tilt_to_orbit_rad"] =
+        rotation.axial_tilt_to_orbit_rad;
+    rotation_state["orbital_period_seconds"] = rotation.orbital_period_seconds;
+    return rotation_state;
+}
+
+godot::Dictionary focus_target_state_to_dictionary(const FocusTargetStateView& state_view) {
+    godot::Dictionary state;
+    state["id"] = godot::String(state_view.id.c_str());
+    state["name"] = godot::String(state_view.name.c_str());
+    state["focus_type"] = godot::String(state_view.focus_type.c_str());
+    state["radius_km"] = state_view.radius_km;
+    state["framing_radius_km"] = state_view.framing_radius_km;
+    state["preferred_min_distance_km"] = state_view.preferred_min_distance_km;
+    state["preferred_max_distance_km"] = state_view.preferred_max_distance_km;
+    state["simulation_position_km"] =
+        vec3_to_dictionary(state_view.simulation_position_km);
+    state["simulation_velocity_km_s"] =
+        vec3_to_dictionary(state_view.simulation_velocity_km_s);
+    state["position"] = vec3_to_vector3(state_view.position);
+    state["color"] = godot::Color(
+        state_view.color.r,
+        state_view.color.g,
+        state_view.color.b);
+    state["source_kind"] = godot::String(state_view.source_kind.c_str());
+    state["visual_shape"] = godot::String(state_view.visual_shape.c_str());
+    state["visual_size_km"] = state_view.visual_size_km;
+    state["render_domain_hint"] =
+        godot::String(state_view.render_domain_hint.c_str());
+    state["central_body_name"] =
+        godot::String(state_view.central_body_name.c_str());
+    state["orbital_period_seconds"] = state_view.orbital_period_seconds;
+    state["orbital_period_ydhms"] =
+        godot::String(state_view.orbital_period_ydhms.c_str());
+    state["orbit"] = orbit_to_dictionary(state_view.orbit);
+    state["rotation"] = rotation_to_dictionary(state_view.rotation);
+
+    if (state_view.body_index >= 0) {
+        state["body_index"] = state_view.body_index;
+    }
+    if (state_view.spacecraft_index >= 0) {
+        state["spacecraft_index"] = state_view.spacecraft_index;
+    }
+    if (state_view.reference_body_index >= 0) {
+        state["reference_body_index"] = state_view.reference_body_index;
+    }
+
+    return state;
 }
 
 } // namespace
@@ -144,55 +148,12 @@ int SolarSystemBridge::get_body_count() const {
 }
 
 godot::Dictionary SolarSystemBridge::get_body_state(int index) const {
-    if (index < 0 || index >= static_cast<int>(sim_.body_count())) {
+    const auto state_view = resolve_body_state_view(sim_, index);
+    if (!state_view.has_value()) {
         return {};
     }
 
-    const auto& body = sim_.bodies()[static_cast<size_t>(index)];
-    std::string central_body_name;
-    if (body.orbit.central_body_index >= 0 &&
-        body.orbit.central_body_index < static_cast<int>(sim_.body_count())) {
-        central_body_name =
-            sim_.bodies()[static_cast<size_t>(body.orbit.central_body_index)].name;
-    }
-    const std::string orbital_period_text =
-        body.rotation.orbital_period_s > 0.0
-            ? solar::format_duration_ydhms(body.rotation.orbital_period_s)
-            : "";
-
-    const double scale = GODOT_UNITS_PER_AU / KM_PER_AU;
-    godot::Dictionary state = make_focus_metadata(
-        body.id,
-        body.focus_type,
-        body.radius_km,
-        body.preferred_min_distance_km,
-        body.preferred_max_distance_km,
-        body.position_km,
-        body.velocity_km_s,
-        scale);
-    godot::Dictionary orbit_state = orbit_to_dictionary(body.orbit);
-
-    godot::Dictionary rotation_state;
-    rotation_state["rotation_speed_rad_per_s"] = body.rotation.rotation_speed_rad_per_s;
-    rotation_state["axial_tilt_to_orbit_rad"] =
-        body.rotation.axial_tilt_to_orbit_rad;
-    rotation_state["orbital_period_seconds"] = body.rotation.orbital_period_s;
-
-    state["name"] = godot::String(body.name.c_str());
-    state["color"] = godot::Color(body.color.r, body.color.g, body.color.b);
-    state["source_kind"] = godot::String("body");
-    state["body_index"] = index;
-    state["visual_shape"] = godot::String("sphere");
-    state["visual_size_km"] = body.radius_km * 2.0;
-    state["render_domain_hint"] =
-        godot::String(body.focus_type == FocusTargetType::Star ? "far" : "mid");
-    state["central_body_name"] = godot::String(central_body_name.c_str());
-    state["orbital_period_seconds"] = body.rotation.orbital_period_s;
-    state["orbital_period_ydhms"] = godot::String(orbital_period_text.c_str());
-    state["orbit"] = orbit_state;
-    state["rotation"] = rotation_state;
-
-    return state;
+    return focus_target_state_to_dictionary(*state_view);
 }
 
 int SolarSystemBridge::get_spacecraft_count() const {
@@ -200,54 +161,12 @@ int SolarSystemBridge::get_spacecraft_count() const {
 }
 
 godot::Dictionary SolarSystemBridge::get_spacecraft_state(int index) const {
-    if (index < 0 || index >= static_cast<int>(sim_.spacecraft_count())) {
+    const auto state_view = resolve_spacecraft_state_view(sim_, index);
+    if (!state_view.has_value()) {
         return {};
     }
 
-    const auto& spacecraft = sim_.spacecraft()[static_cast<size_t>(index)];
-    const double scale = GODOT_UNITS_PER_AU / KM_PER_AU;
-    godot::Dictionary state = make_focus_metadata(
-        spacecraft.id,
-        FocusTargetType::Spacecraft,
-        spacecraft.bounding_radius_km,
-        spacecraft.preferred_min_distance_km,
-        spacecraft.preferred_max_distance_km,
-        spacecraft.position_km,
-        spacecraft.velocity_km_s,
-        scale);
-
-    std::string reference_body_name;
-    if (spacecraft.reference_body_index >= 0 &&
-        spacecraft.reference_body_index < static_cast<int>(sim_.body_count())) {
-        reference_body_name =
-            sim_.bodies()[static_cast<size_t>(spacecraft.reference_body_index)].name;
-    }
-
-    const std::string orbital_period_text =
-        spacecraft.orbital_period_s > 0.0
-            ? solar::format_duration_ydhms(spacecraft.orbital_period_s)
-            : "";
-    godot::Dictionary orbit_state = orbit_to_dictionary(spacecraft.orbit);
-    godot::Dictionary empty_rotation_state;
-    empty_rotation_state["rotation_speed_rad_per_s"] = 0.0;
-    empty_rotation_state["axial_tilt_to_orbit_rad"] = 0.0;
-    empty_rotation_state["orbital_period_seconds"] = spacecraft.orbital_period_s;
-
-    state["name"] = godot::String(spacecraft.name.c_str());
-    state["color"] = godot::Color(spacecraft.color.r, spacecraft.color.g, spacecraft.color.b);
-    state["source_kind"] = godot::String("spacecraft");
-    state["spacecraft_index"] = index;
-    state["reference_body_index"] = spacecraft.reference_body_index;
-    state["visual_shape"] = godot::String("cube");
-    state["visual_size_km"] = spacecraft.visual_size_km;
-    state["render_domain_hint"] = godot::String("near");
-    state["central_body_name"] = godot::String(reference_body_name.c_str());
-    state["orbital_period_seconds"] = spacecraft.orbital_period_s;
-    state["orbital_period_ydhms"] = godot::String(orbital_period_text.c_str());
-    state["orbit"] = orbit_state;
-    state["rotation"] = empty_rotation_state;
-
-    return state;
+    return focus_target_state_to_dictionary(*state_view);
 }
 
 int SolarSystemBridge::get_focus_target_count() const {
@@ -255,12 +174,12 @@ int SolarSystemBridge::get_focus_target_count() const {
 }
 
 godot::Dictionary SolarSystemBridge::get_focus_target_state(int index) const {
-    const int body_count = get_body_count();
-    if (index < body_count) {
-        return get_body_state(index);
+    const auto state_view = resolve_focus_target_state_view(sim_, index);
+    if (!state_view.has_value()) {
+        return {};
     }
 
-    return get_spacecraft_state(index - body_count);
+    return focus_target_state_to_dictionary(*state_view);
 }
 
 godot::String SolarSystemBridge::format_duration_ydhms(double total_seconds) const {

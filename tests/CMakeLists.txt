@@ -25,6 +25,17 @@ target_link_libraries(backend_core_tests
 include(GoogleTest)
 gtest_discover_tests(backend_core_tests)
 
+add_executable(godot_bridge_tests
+    ${CMAKE_SOURCE_DIR}/native/godot_bridge/src/bridge/tests/bridge_state_builder_tests.cpp
+    ${CMAKE_SOURCE_DIR}/native/godot_bridge/src/bridge/tests/bridge_state_resolver_tests.cpp
+)
+
+target_link_libraries(godot_bridge_tests
+    PRIVATE godot_bridge_support GTest::gtest_main
+)
+
+gtest_discover_tests(godot_bridge_tests)
+
 # Godot writes editor and user data outside the repo by default. Redirect it
 # into the build tree so headless runs work under sandboxed and portable installs.
 set(GODOT_TEST_HOME "${CMAKE_BINARY_DIR}/godot_user")
@@ -80,18 +91,20 @@ if(GODOT_EXECUTABLE)
     add_test(
         NAME godot_bridge_smoke
         COMMAND ${GODOT_EXECUTABLE}
+            --path ${CMAKE_SOURCE_DIR}/godot
             --headless
             --display-driver headless
             --audio-driver Dummy
             --import
             --quit
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )
 
     # Run GUT after import
     add_test(
         NAME godot_gut_tests
         COMMAND ${GODOT_EXECUTABLE}
+            --path ${CMAKE_SOURCE_DIR}/godot
             --headless
             --display-driver headless
             --audio-driver Dummy
@@ -99,7 +112,7 @@ if(GODOT_EXECUTABLE)
             -gdir=res://tests
             -ginclude_subdirs
             -gexit
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/godot
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )
 
     set_tests_properties(godot_bridge_smoke PROPERTIES

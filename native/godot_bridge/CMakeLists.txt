@@ -1,4 +1,23 @@
 set(TARGET_NAME godot_bridge)
+set(SUPPORT_TARGET godot_bridge_support)
+
+add_library(${SUPPORT_TARGET} STATIC
+    src/bridge/bridge_state_builder.cpp
+    src/bridge/bridge_state_resolver.cpp
+)
+
+target_include_directories(${SUPPORT_TARGET} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(${SUPPORT_TARGET}
+    PUBLIC backend_core
+)
+
+set_target_properties(${SUPPORT_TARGET} PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    FOLDER "solar-system"
+)
 
 add_library(${TARGET_NAME} SHARED
     src/bridge/register_types.cpp
@@ -10,7 +29,7 @@ target_include_directories(${TARGET_NAME} PUBLIC
 )
 
 target_link_libraries(${TARGET_NAME}
-    PRIVATE godot-cpp backend_core protocol
+    PRIVATE godot-cpp backend_core protocol ${SUPPORT_TARGET}
 )
 
 # Get the suffix from godot-cpp (e.g. .windows.template_debug.x86_64)
